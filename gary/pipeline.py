@@ -22,9 +22,9 @@ from gary.agents.video_agent import VideoAgent
 
 
 class ContentPipeline:
-    def __init__(self, publisher: Publisher | None = None) -> None:
-        self.trends = TrendsAgent()
-        self.transcripts = TranscriptAgent()
+    def __init__(self, publisher: Publisher | None = None, use_live: bool = True) -> None:
+        self.trends = TrendsAgent(use_live=use_live)
+        self.transcripts = TranscriptAgent(use_live=use_live)
         self.videos = VideoAgent()
         self.thumbnails = ThumbnailAgent()
         self.publisher = publisher or Publisher()

@@ -25,10 +25,12 @@ def _tip(x: float, y: float, angle_deg: float, length: float) -> tuple[float, fl
 
 @dataclass
 class Pose:
-    left_arm: float = 200.0
-    right_arm: float = 160.0
-    left_leg: float = 200.0
-    right_leg: float = 160.0
+    # Angles are degrees measured clockwise from straight-DOWN (0 = hanging down,
+    # 90 = pointing right, 180 = straight up, -90/270 = pointing left).
+    left_arm: float = -30.0   # hangs down, angled slightly left
+    right_arm: float = 30.0   # hangs down, angled slightly right
+    left_leg: float = -12.0
+    right_leg: float = 12.0
     lean: float = 0.0  # head/torso tilt in degrees
 
 
@@ -55,6 +57,10 @@ def draw_stick_figure(
     head_center = (shoulder[0] + head_r * math.sin(math.radians(pose.lean)),
                    shoulder[1] - head_r * math.cos(math.radians(pose.lean)))
 
+    # Arms attach a little below the shoulder so a raised arm clears the head.
+    arm_joint = (shoulder[0] + 0.20 * (hip[0] - shoulder[0]),
+                 shoulder[1] + 0.20 * (hip[1] - shoulder[1]))
+
     # Head
     draw.ellipse(
         [head_center[0] - head_r, head_center[1] - head_r,
@@ -64,8 +70,8 @@ def draw_stick_figure(
     # Torso
     draw.line([shoulder, hip], fill=color, width=w)
     # Arms
-    draw.line([shoulder, _tip(*shoulder, pose.left_arm, arm)], fill=color, width=w)
-    draw.line([shoulder, _tip(*shoulder, pose.right_arm, arm)], fill=color, width=w)
+    draw.line([arm_joint, _tip(*arm_joint, pose.left_arm, arm)], fill=color, width=w)
+    draw.line([arm_joint, _tip(*arm_joint, pose.right_arm, arm)], fill=color, width=w)
     # Legs
     draw.line([hip, _tip(*hip, pose.left_leg, leg)], fill=color, width=w)
     draw.line([hip, _tip(*hip, pose.right_leg, leg)], fill=color, width=w)
@@ -75,34 +81,36 @@ def draw_stick_figure(
 
 def pose_idle(t: float) -> Pose:
     bob = 4 * math.sin(t * 2 * math.pi)
-    return Pose(left_arm=205 + bob, right_arm=155 - bob)
+    return Pose(left_arm=-30 - bob, right_arm=30 + bob)
 
 
 def pose_wave(t: float) -> Pose:
-    wave = 35 * math.sin(t * 4 * math.pi)
-    return Pose(right_arm=60 + wave, left_arm=205)
+    # Right arm raised overhead, hand waving side to side.
+    wave = 20 * math.sin(t * 4 * math.pi)
+    return Pose(right_arm=150 + wave, left_arm=-30)
 
 
 def pose_point_up(t: float) -> Pose:
-    jitter = 5 * math.sin(t * 6 * math.pi)
-    return Pose(right_arm=25 + jitter, left_arm=210)
+    jitter = 4 * math.sin(t * 6 * math.pi)
+    return Pose(right_arm=165 + jitter, left_arm=-30)
 
 
 def pose_point_down(t: float) -> Pose:
-    jitter = 5 * math.sin(t * 6 * math.pi)
-    return Pose(right_arm=120 + jitter, left_arm=210)
+    jitter = 4 * math.sin(t * 6 * math.pi)
+    return Pose(right_arm=35 + jitter, left_arm=-30)
 
 
 def pose_present(t: float) -> Pose:
-    sweep = 10 * math.sin(t * 2 * math.pi)
-    return Pose(right_arm=95 + sweep, left_arm=250)
+    # Right arm extended out to the side toward the on-screen prop.
+    sweep = 8 * math.sin(t * 2 * math.pi)
+    return Pose(right_arm=90 + sweep, left_arm=-30)
 
 
 def pose_walk(t: float) -> Pose:
-    swing = 25 * math.sin(t * 4 * math.pi)
+    swing = 22 * math.sin(t * 4 * math.pi)
     return Pose(
-        left_leg=200 + swing, right_leg=160 - swing,
-        left_arm=200 - swing, right_arm=160 + swing,
+        left_leg=-swing, right_leg=swing,
+        left_arm=-30 + swing, right_arm=30 + swing,
     )
 
 

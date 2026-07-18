@@ -26,8 +26,9 @@ def test_all_gestures_return_pose():
 
 @pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg not installed")
 def test_render_story_produces_mp4(tmp_path):
-    plan = ContentPipeline().run_daily(topic="Bitcoin ETF inflows")
+    plan = ContentPipeline(use_live=False).run_daily(topic="Bitcoin ETF inflows")
     out = tmp_path / "story.mp4"
+    # voiceover is stubbed off by the offline fixture -> silent, still valid MP4.
     render_story(plan, out_path=str(out), fps=6, seconds_per_scene=1.0)
     assert out.exists()
     assert out.stat().st_size > 5000  # a real, non-trivial video file

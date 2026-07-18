@@ -68,7 +68,7 @@ class ThumbnailAgent:
             f'<text x="60" y="330" {font} font-size="90" font-weight="bold" '
             f'fill="#ffffff">{_wrap(spec.headline)}</text>',
             f'<text x="60" y="{height - 60}" {font} font-size="34" '
-            f'fill="{spec.accent_color}">gary finance</text>',
+            f'fill="{spec.accent_color}">Stickfigure Finance</text>',
             "</svg>",
         ]
         return "\n".join(parts)

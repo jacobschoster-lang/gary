@@ -103,12 +103,18 @@ def run_pipeline(req: PipelineRequest) -> dict[str, Any]:
 
 
 @app.get("/api/story.mp4")
-def story_video(topic: str) -> FileResponse:
-    """Render a short animated stick-figure video for a topic (preview)."""
+def story_video(topic: str, voice: bool = False) -> FileResponse:
+    """Render a short animated stick-figure video for a topic (preview).
+
+    ``voice=false`` (default) renders a fast silent preview; ``voice=true`` adds
+    gTTS narration (slower, needs internet).
+    """
     plan = pipeline.run_daily(topic=topic)
-    out_path = Path(tempfile.gettempdir()) / "gary_preview.mp4"
+    out_path = Path(tempfile.gettempdir()) / f"gary_preview_{'voice' if voice else 'silent'}.mp4"
     try:
-        render_story(plan, out_path=str(out_path), fps=10, seconds_per_scene=2.5)
+        render_story(
+            plan, out_path=str(out_path), fps=10, seconds_per_scene=2.5, voiceover=voice
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return FileResponse(str(out_path), media_type="video/mp4", filename="story.mp4")

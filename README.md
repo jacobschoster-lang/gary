@@ -3,10 +3,19 @@
 Automated finance-content platform: a set of agents plus a dashboard that
 produce and track daily YouTube finance videos and shorts.
 
-This repo is an early starter scaffold. The agents currently use deterministic,
-offline logic so the app runs and is testable without any API keys. Real
-integrations (LLMs, market-data APIs, YouTube Data API, thumbnail generation,
-uploads) plug into the clearly marked seams in `gary/agents/`.
+The agents pull **real, live data** from free public APIs (no keys needed) and
+fall back to deterministic sample data when offline, so the app always runs and
+stays testable. Videos are animated stick-figure stories with a synthesized
+voiceover. Remaining integrations (LLM scripting, YouTube Data API upload) plug
+into clearly marked seams.
+
+Live data sources (all free, no API key, with graceful fallback):
+- Stocks (#2): Yahoo Finance chart API — `gary/data/stocks.py`
+- Crypto (#3): CoinGecko markets API — `gary/data/crypto.py`
+- News (#1): Google News RSS grounds transcripts in current headlines — `gary/data/news.py`
+
+Voiceover uses gTTS (`gary/render/tts.py`); it needs internet and degrades to a
+silent video if unavailable.
 
 ## Roadmap (tracked in issues) → starter modules
 

@@ -1,9 +1,11 @@
 """Trends agent (issues #2 and #3).
 
 Surfaces trending stocks, crypto assets, and YouTube topics that feed the
-transcript and video pipelines. The current implementation returns a
-deterministic sample set so the platform is runnable offline. Replace ``_fetch``
-and ``_fetch_youtube`` with real scrapers / market-data / YouTube API calls.
+transcript and video pipelines. When ``use_live`` is set (default) it pulls real
+data from free public APIs (Yahoo Finance for stocks, CoinGecko for crypto) and
+falls back to a deterministic sample set if the network/API is unavailable, so
+the platform is always runnable offline. YouTube topics remain a stub until a
+YouTube Data API key is wired in.
 """
 
 from __future__ import annotations
@@ -41,6 +43,8 @@ class YouTubeTopic:
 class TrendsAgent:
     """Returns ranked trending assets per market."""
 
+    use_live: bool = True
+
     def top(self, market: Market, limit: int = 5) -> list[Trend]:
         if market not in ("stocks", "crypto"):
             raise ValueError(f"unknown market: {market!r}")
@@ -52,7 +56,21 @@ class TrendsAgent:
         return trends[:limit]
 
     def _fetch(self, market: Market) -> list[Trend]:
-        # NOTE: replace with real scrapers / market-data APIs.
+        if self.use_live:
+            live = self._fetch_live(market)
+            if live:
+                return live
+        return self._fetch_stub(market)
+
+    def _fetch_live(self, market: Market) -> list[Trend] | None:
+        # Lazy import avoids a circular import (gary.data imports Trend).
+        from gary.data import fetch_crypto_trends, fetch_stock_trends
+
+        if market == "stocks":
+            return fetch_stock_trends(limit=8)
+        return fetch_crypto_trends(limit=8)
+
+    def _fetch_stub(self, market: Market) -> list[Trend]:
         if market == "stocks":
             return [
                 Trend("NVDA", "NVIDIA", "stocks", 94.2, "AI demand momentum"),

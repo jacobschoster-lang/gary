@@ -25,10 +25,19 @@ Daily YouTube posting:
   `--video-file` / `GARY_VIDEO_FILE`. Uploads need OAuth on the channel owner's
   account (an API key cannot upload).
 - Video rendering lives in `gary/render/` (animated stick figures via Pillow +
-  system `ffmpeg`). The daily job auto-renders an MP4 when `GARY_VIDEO_FILE` is
-  unset. Rendering requires the `ffmpeg` binary (a runtime system dependency,
-  pre-installed on the dev VM and installed by the workflow) — it is not a pip
-  package. Videos currently have no audio; TTS narration is the next seam.
+  system `ffmpeg`, with gTTS voiceover). The daily job auto-renders an MP4 when
+  `GARY_VIDEO_FILE` is unset. Rendering requires the `ffmpeg` binary (a runtime
+  system dependency, pre-installed on the dev VM and installed by the workflow) —
+  it is not a pip package.
+- Live data (`gary/data/`) and gTTS voiceover both need network. Everything
+  fails soft: agents fall back to sample data and video falls back to silent, so
+  the app/tests never break offline. Tests force this offline path via the
+  autouse fixture in `tests/conftest.py` (patches `gary.data.http` +
+  `gtts.gTTS`); when adding data/TTS code keep it patchable there and keep calls
+  going through `gary.data.http` so they stay deterministic in tests.
+- Live agents make network calls per request (short timeouts + 60s cache in
+  `gary/data/http.py`). Construct agents/pipeline with `use_live=False` for
+  fully offline/deterministic behavior.
 
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly

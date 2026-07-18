@@ -1,9 +1,10 @@
 """Transcript agent (issue #1).
 
-Generates a structured YouTube finance video transcript from a topic and an
-optional set of data points. The current logic is deterministic and offline so
-the platform runs without API keys; swap ``_draft_body`` for a real LLM call to
-upgrade the output quality.
+Generates a structured YouTube finance video transcript from a topic. When
+``use_live`` is set (default) and no data points are supplied, it grounds the
+transcript in real, current headlines pulled from Google News; it falls back to
+generic copy when the network is unavailable. Swap ``_draft_body`` for a real
+LLM call to further upgrade the output quality.
 """
 
 from __future__ import annotations
@@ -29,8 +30,9 @@ class Transcript:
 class TranscriptAgent:
     """Turns a finance topic into a video-ready transcript."""
 
-    channel_name: str = "gary finance"
+    channel_name: str = "Stickfigure Finance"
     data_points: list[str] = field(default_factory=list)
+    use_live: bool = True
 
     def generate(self, topic: str, data_points: list[str] | None = None) -> Transcript:
         topic = (topic or "").strip()
@@ -38,6 +40,8 @@ class TranscriptAgent:
             raise ValueError("topic must not be empty")
 
         points = data_points if data_points is not None else self.data_points
+        if not points and self.use_live:
+            points = self._fetch_live_points(topic)
         sections = self._draft_body(topic, points)
         word_count = sum(len(s["script"].split()) for s in sections)
 
@@ -48,6 +52,12 @@ class TranscriptAgent:
             word_count=word_count,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
+
+    def _fetch_live_points(self, topic: str) -> list[str]:
+        from gary.data import fetch_headlines
+
+        headlines = fetch_headlines(topic, limit=3)
+        return headlines or []
 
     def _title(self, topic: str) -> str:
         return f"{topic.title()}: What Every Investor Needs to Know Today"
@@ -60,8 +70,8 @@ class TranscriptAgent:
         )
 
         if points:
-            evidence = " ".join(
-                f"Data point {i + 1}: {p}." for i, p in enumerate(points)
+            evidence = "Here is what is making headlines. " + " ".join(
+                f"{p}." for p in points
             )
         else:
             evidence = (
