@@ -47,6 +47,42 @@ python3 -m venv .venv
 .venv/bin/pytest -q
 ```
 
+## Daily posting to YouTube (@StickfigureFinance-r8m, 08:00 ET)
+
+Posting runs on GitHub Actions (`.github/workflows/daily-post.yml`), not the
+cloud VM. Cron is UTC-only, so it triggers at 12:00 and 13:00 UTC and the guard
+in `gary/jobs/schedule.py` only runs the job at the real 08:00 America/New_York
+(handles EDT/EST). The job (`gary/jobs/daily_post.py`) runs the pipeline, builds
+title/description/tags, and uploads via `gary/integrations/youtube.py`.
+
+Required GitHub repo **secrets** (Settings → Secrets and variables → Actions):
+- `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` — OAuth client (Desktop app)
+- `YOUTUBE_REFRESH_TOKEN` — minted once with `scripts/youtube_authorize.py`
+  using the Google account that owns the channel
+
+Optional repo **variables**:
+- `YOUTUBE_PRIVACY` — `private` (default) | `unlisted` | `public`
+- `GARY_VIDEO_FILE` — path to the rendered MP4 to upload
+
+Mint a refresh token locally (needs a browser):
+
+```bash
+export YOUTUBE_CLIENT_ID=...
+export YOUTUBE_CLIENT_SECRET=...
+.venv/bin/python scripts/youtube_authorize.py
+```
+
+Without credentials/video the job does a safe **dry run** (writes a manifest to
+`out/`, uploads nothing). Note: producing the actual MP4 (TTS + visuals) is a
+separate rendering step still to be built; `GARY_VIDEO_FILE` is the seam.
+
+Run/inspect manually:
+
+```bash
+.venv/bin/python -m gary.jobs.daily_post --topic "Bitcoin ETF inflows" --force
+.venv/bin/python -m gary.jobs.schedule --check   # exit 0 iff it's 08:00 ET now
+```
+
 ## API
 
 - `GET /` — dashboard

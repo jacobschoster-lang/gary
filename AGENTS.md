@@ -14,6 +14,19 @@ Standard commands (see `README.md` for details):
 - Lint: `.venv/bin/ruff check .`
 - Test: `.venv/bin/pytest -q`
 
+Daily YouTube posting:
+- Scheduling lives in GitHub Actions (`.github/workflows/daily-post.yml`), NOT
+  the cloud VM (the VM is not always-on). It runs the daily post at 08:00
+  America/New_York via a UTC cron pair (12:00 + 13:00) gated by
+  `gary/jobs/schedule.py` for DST correctness.
+- `gary/jobs/daily_post.py` dry-runs safely (writes a manifest to `out/`, no
+  upload) unless `YOUTUBE_CLIENT_ID`/`YOUTUBE_CLIENT_SECRET`/
+  `YOUTUBE_REFRESH_TOKEN` are set AND a rendered MP4 is provided via
+  `--video-file` / `GARY_VIDEO_FILE`. Uploads need OAuth on the channel owner's
+  account (an API key cannot upload).
+- Real video rendering (MP4 from the transcript/thumbnail) is not implemented
+  yet; `GARY_VIDEO_FILE` is the intended seam.
+
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly
   (not pip-installed), so the working directory must be the repo root for

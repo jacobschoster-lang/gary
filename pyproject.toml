@@ -9,7 +9,7 @@ description = "Automated finance-content platform (agents + dashboard)"
 requires-python = ">=3.10"
 
 [tool.setuptools]
-packages = ["gary", "gary.agents"]
+packages = ["gary", "gary.agents", "gary.jobs", "gary.integrations"]
 include-package-data = true
 
 [tool.ruff]
