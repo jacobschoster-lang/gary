@@ -46,6 +46,12 @@ Daily YouTube posting:
 - Video captions are per-sentence (subtitle-style): the renderer splits each
   scene's narration into sentences and gives each its own timed sub-segment, so
   caption text must stay aligned with the narration text.
+- No-key local LLM for dev/sandbox: run Ollama and set `OPENAI_BASE_URL=`
+  `http://localhost:11434/v1`, `OPENAI_API_KEY=ollama`, `OPENAI_MODEL=llama3.2:3b`.
+  Gotcha on this cloud VM: Ollama's AVX-512/AMX CPU backends segfault ("llama-
+  server terminated: signal: segmentation fault"). Fix by moving the AVX-512
+  variants out of `/usr/local/lib/ollama/` (keep `libggml-cpu-haswell.so` = AVX2)
+  and restarting `ollama serve`, which forces the stable AVX2 path.
 
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly

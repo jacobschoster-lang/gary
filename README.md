@@ -31,6 +31,22 @@ back to the built-in deterministic script otherwise. Configure:
 The LLM must return the four headings the renderer styles (`Hook`, `The Data`,
 `Analysis`, `Call To Action`); otherwise the deterministic script is used.
 
+No-key local option (dev): run a local model with [Ollama] and point the app at
+it — no account or API key required:
+
+```bash
+ollama serve &
+ollama pull llama3.2:3b
+export OPENAI_API_KEY=ollama         # any dummy value; Ollama ignores it
+export OPENAI_BASE_URL=http://localhost:11434/v1
+export OPENAI_MODEL=llama3.2:3b
+```
+
+This is great for local/sandbox use; the scheduled GitHub Actions job still needs
+a hosted provider key (a local model isn't available in CI).
+
+[Ollama]: https://ollama.com
+
 ## Roadmap (tracked in issues) → starter modules
 
 Each issue now has a runnable starter module with a clear extension seam
