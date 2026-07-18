@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>gary — finance content dashboard</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0; background: #0b0f14; color: #e6edf3;
+    }
+    header {
+      padding: 24px 32px; border-bottom: 1px solid #1f2a37;
+      background: linear-gradient(90deg, #111827, #0b0f14);
+    }
+    h1 { margin: 0; font-size: 22px; letter-spacing: .3px; }
+    .sub { color: #8b98a5; font-size: 13px; margin-top: 4px; }
+    main { max-width: 880px; margin: 0 auto; padding: 24px 32px 64px; }
+    .card {
+      background: #111827; border: 1px solid #1f2a37; border-radius: 12px;
+      padding: 20px; margin-bottom: 20px;
+    }
+    h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .8px; color: #9db2c6; margin: 0 0 12px; }
+    input, button {
+      font-size: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid #2a3948;
+      background: #0b0f14; color: #e6edf3;
+    }
+    input { width: 100%; margin-bottom: 10px; }
+    button { background: #2563eb; border-color: #2563eb; cursor: pointer; font-weight: 600; }
+    button:hover { background: #1d4ed8; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { padding: 8px 0; border-bottom: 1px solid #1f2a37; }
+    .muted { color: #8b98a5; font-weight: 400; font-size: 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    pre { white-space: pre-wrap; background: #0b0f14; padding: 12px; border-radius: 8px; border: 1px solid #1f2a37; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>gary</h1>
+    <div class="sub">Automated finance-content platform · agents + tracking dashboard</div>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Generate a transcript</h2>
+      <input id="topic" placeholder="e.g. Bitcoin ETF inflows" />
+      <button onclick="generate()">Generate</button>
+      <pre id="out" style="margin-top:12px; display:none;"></pre>
+    </div>
+
+    <div class="card">
+      <h2>Trending now</h2>
+      <div class="grid">
+        <div><h2>Stocks</h2><ul id="stocks"></ul></div>
+        <div><h2>Crypto</h2><ul id="crypto"></ul></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Recent transcripts</h2>
+      <ul id="transcripts"><!--TRANSCRIPTS--></ul>
+    </div>
+  </main>
+
+  <script>
+    async function generate() {
+      const topic = document.getElementById('topic').value.trim();
+      if (!topic) return;
+      const res = await fetch('/api/transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic })
+      });
+      const data = await res.json();
+      const out = document.getElementById('out');
+      out.style.display = 'block';
+      out.textContent = data.title + "\n\n" +
+        data.sections.map(s => s.heading + ": " + s.script).join("\n\n");
+    }
+    async function loadTrends(market, elId) {
+      const res = await fetch('/api/trends?market=' + market);
+      const data = await res.json();
+      document.getElementById(elId).innerHTML = data.trends
+        .map(t => `<li>${t.symbol} <span class="muted">${t.name} · ${t.score}</span></li>`)
+        .join('');
+    }
+    loadTrends('stocks', 'stocks');
+    loadTrends('crypto', 'crypto');
+  </script>
+</body>
+</html>
