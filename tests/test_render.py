@@ -24,6 +24,14 @@ def test_all_gestures_return_pose():
         assert isinstance(pose, Pose), name
 
 
+def test_split_sentences():
+    from gary.render.video import _split_sentences
+
+    out = _split_sentences("First sentence. Second one! Third? ")
+    assert out == ["First sentence.", "Second one!", "Third?"]
+    assert _split_sentences("no punctuation here") == ["no punctuation here"]
+
+
 @pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg not installed")
 def test_render_story_produces_mp4(tmp_path):
     plan = ContentPipeline(use_live=False).run_daily(topic="Bitcoin ETF inflows")

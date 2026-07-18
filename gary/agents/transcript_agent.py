@@ -33,6 +33,7 @@ class TranscriptAgent:
     channel_name: str = "Stickfigure Finance"
     data_points: list[str] = field(default_factory=list)
     use_live: bool = True
+    use_llm: bool = True
 
     def generate(self, topic: str, data_points: list[str] | None = None) -> Transcript:
         topic = (topic or "").strip()
@@ -42,7 +43,12 @@ class TranscriptAgent:
         points = data_points if data_points is not None else self.data_points
         if not points and self.use_live:
             points = self._fetch_live_points(topic)
-        sections = self._draft_body(topic, points)
+
+        sections = None
+        if self.use_llm:
+            sections = self._llm_sections(topic, points)
+        if sections is None:
+            sections = self._draft_body(topic, points)
         word_count = sum(len(s["script"].split()) for s in sections)
 
         return Transcript(
@@ -58,6 +64,11 @@ class TranscriptAgent:
 
         headlines = fetch_headlines(topic, limit=3)
         return headlines or []
+
+    def _llm_sections(self, topic: str, points: list[str]) -> list[dict[str, str]] | None:
+        from gary.agents.llm import generate_script
+
+        return generate_script(topic, points, self.channel_name)
 
     def _title(self, topic: str) -> str:
         return f"{topic.title()}: What Every Investor Needs to Know Today"

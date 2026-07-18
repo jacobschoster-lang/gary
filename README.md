@@ -15,7 +15,21 @@ Live data sources (all free, no API key, with graceful fallback):
 - News (#1): Google News RSS grounds transcripts in current headlines — `gary/data/news.py`
 
 Voiceover uses gTTS (`gary/render/tts.py`); it needs internet and degrades to a
-silent video if unavailable.
+silent video if unavailable. Captions are timed per sentence (subtitle-style),
+synced to the narration.
+
+### LLM scripting (optional)
+
+`gary/agents/llm.py` upgrades transcript copy using any OpenAI-compatible
+chat-completions API. It activates only when `OPENAI_API_KEY` is set and falls
+back to the built-in deterministic script otherwise. Configure:
+
+- `OPENAI_API_KEY` (required to enable)
+- `OPENAI_BASE_URL` (default `https://api.openai.com/v1`)
+- `OPENAI_MODEL` (default `gpt-4o-mini`)
+
+The LLM must return the four headings the renderer styles (`Hook`, `The Data`,
+`Analysis`, `Call To Action`); otherwise the deterministic script is used.
 
 ## Roadmap (tracked in issues) → starter modules
 

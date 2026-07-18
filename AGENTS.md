@@ -38,6 +38,14 @@ Daily YouTube posting:
 - Live agents make network calls per request (short timeouts + 60s cache in
   `gary/data/http.py`). Construct agents/pipeline with `use_live=False` for
   fully offline/deterministic behavior.
+- LLM scripting (`gary/agents/llm.py`) activates only when `OPENAI_API_KEY` is
+  set and must return the four renderer headings (`Hook`, `The Data`,
+  `Analysis`, `Call To Action`) or it's discarded for the deterministic script.
+  Use `TranscriptAgent(use_llm=False)` to disable. The offline test fixture
+  patches `gary.agents.llm._chat_completion` so the LLM never runs in tests.
+- Video captions are per-sentence (subtitle-style): the renderer splits each
+  scene's narration into sentences and gives each its own timed sub-segment, so
+  caption text must stay aligned with the narration text.
 
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly

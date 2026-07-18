@@ -11,6 +11,7 @@ def offline(monkeypatch):
     """
     monkeypatch.setattr("gary.data.http.get_json", lambda *a, **k: None)
     monkeypatch.setattr("gary.data.http.get_text", lambda *a, **k: None)
+    monkeypatch.setattr("gary.agents.llm._chat_completion", lambda *a, **k: None)
 
     def _no_network_tts(*a, **k):
         raise RuntimeError("offline in tests")

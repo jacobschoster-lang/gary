@@ -8,6 +8,7 @@ the narration. Frames are drawn with Pillow and encoded to H.264 via the system
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import tempfile
@@ -118,6 +119,11 @@ def _audio_duration(path: str) -> float | None:
         return None
 
 
+def _split_sentences(text: str) -> list[str]:
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip())
+    return [p.strip() for p in parts if p.strip()] or [(text or "").strip()]
+
+
 def _scene_audio(tmp: Path, index: int, narration_mp3: str | None, seconds: float) -> Path:
     """Return a WAV of exactly ``seconds`` (narration padded with silence, or silence)."""
     out = tmp / f"audio_{index:03d}.wav"
@@ -172,38 +178,56 @@ def render_story(
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         idx = 0
+        audio_i = 0
         scene_audios: list[Path] = []
 
         for si, (heading, caption, gesture, prop, narration) in enumerate(scenes):
-            narration_mp3: str | None = None
-            duration = seconds_per_scene
-            if voiceover:
-                mp3 = tmp / f"narr_{si:03d}.mp3"
-                if synthesize(narration, str(mp3)):
-                    narration_mp3 = str(mp3)
-                    dur = _audio_duration(narration_mp3)
-                    if dur:
-                        duration = min(max_scene_seconds, max(2.0, dur + 0.4))
+            # Split each scene into sentence "beats" so captions reveal in sync
+            # with the voiceover (like subtitles).
+            if heading == "__title__":
+                beats = [(caption, narration)]  # caption == topic (title layout)
+            else:
+                beats = [(s, s) for s in _split_sentences(narration)]
 
-            frames = max(1, round(fps * duration))
-            for f in range(frames):
-                phase = f / frames
-                if heading == "__title__":
-                    img = Image.new("RGB", (width, height), BG_TOP)
-                    draw = ImageDraw.Draw(img)
-                    draw.rectangle([0, 0, 12, height], fill=ACCENT)
-                    draw.text((60, height * 0.30), "STICKFIGURE FINANCE",
-                              font=big_font, fill=ACCENT)
-                    draw.text((60, height * 0.30 + 70), topic, font=title_font, fill=WHITE)
-                    draw_stick_figure(draw, width * 0.5, int(height * 0.86), scale=2.0,
-                                      pose=GESTURES["wave"](phase))
-                else:
-                    img = _render_frame(heading, caption, gesture, prop, phase,
-                                        width, height, title_font, body_font, head_font)
-                img.save(tmp / f"frame_{idx:05d}.png")
-                idx += 1
+            # Synthesize + measure each beat first to compute scene-total frames
+            # (so the gesture animation phase runs smoothly across the scene).
+            beat_info: list[tuple[str, str | None, int]] = []
+            for bi, (cap_text, narr_text) in enumerate(beats):
+                mp3: str | None = None
+                default = seconds_per_scene if heading == "__title__" else 2.6
+                duration = default
+                if voiceover:
+                    p = tmp / f"narr_{si:03d}_{bi:02d}.mp3"
+                    if synthesize(narr_text, str(p)):
+                        mp3 = str(p)
+                        dur = _audio_duration(mp3)
+                        if dur:
+                            duration = min(max_scene_seconds, max(1.3, dur + 0.35))
+                beat_info.append((cap_text, mp3, max(1, round(fps * duration))))
 
-            scene_audios.append(_scene_audio(tmp, si, narration_mp3, frames / fps))
+            scene_total = sum(fr for _, _, fr in beat_info)
+            scene_local = 0
+            for cap_text, mp3, frames in beat_info:
+                for _ in range(frames):
+                    phase = scene_local / max(1, scene_total)
+                    if heading == "__title__":
+                        img = Image.new("RGB", (width, height), BG_TOP)
+                        draw = ImageDraw.Draw(img)
+                        draw.rectangle([0, 0, 12, height], fill=ACCENT)
+                        draw.text((60, height * 0.30), "STICKFIGURE FINANCE",
+                                  font=big_font, fill=ACCENT)
+                        draw.text((60, height * 0.30 + 70), topic, font=title_font, fill=WHITE)
+                        draw_stick_figure(draw, width * 0.5, int(height * 0.86), scale=2.0,
+                                          pose=GESTURES["wave"](phase))
+                    else:
+                        img = _render_frame(heading, cap_text, gesture, prop, phase,
+                                            width, height, title_font, body_font, head_font)
+                    img.save(tmp / f"frame_{idx:05d}.png")
+                    idx += 1
+                    scene_local += 1
+
+                scene_audios.append(_scene_audio(tmp, audio_i, mp3, frames / fps))
+                audio_i += 1
 
         silent = tmp / "silent.mp4"
         subprocess.run(
