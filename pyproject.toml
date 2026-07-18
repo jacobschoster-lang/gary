@@ -10,6 +10,7 @@ requires-python = ">=3.10"
 
 [tool.setuptools]
 packages = ["gary", "gary.agents"]
+include-package-data = true
 
 [tool.ruff]
 line-length = 100

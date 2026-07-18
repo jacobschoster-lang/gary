@@ -11,10 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
-from gary.agents import TranscriptAgent, TrendsAgent
+from gary.agents import ThumbnailAgent, TranscriptAgent, TrendsAgent
+from gary.pipeline import ContentPipeline
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -27,11 +28,18 @@ _transcripts: list[dict[str, Any]] = []
 
 transcript_agent = TranscriptAgent()
 trends_agent = TrendsAgent()
+thumbnail_agent = ThumbnailAgent()
+pipeline = ContentPipeline()
 
 
 class TranscriptRequest(BaseModel):
     topic: str = Field(..., min_length=1, description="Finance topic for the video")
     data_points: list[str] = Field(default_factory=list)
+
+
+class PipelineRequest(BaseModel):
+    topic: str | None = Field(default=None, description="Optional topic; auto-picked if omitted")
+    market: str = Field(default="crypto")
 
 
 @app.get("/api/health")
@@ -48,6 +56,15 @@ def trends(market: str = "stocks", limit: int = 5) -> dict[str, Any]:
     return {"market": market, "trends": [t.to_dict() for t in results]}
 
 
+@app.get("/api/youtube-trends")
+def youtube_trends(limit: int = 5) -> dict[str, Any]:
+    try:
+        topics = trends_agent.youtube_topics(limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"topics": [t.to_dict() for t in topics]}
+
+
 @app.post("/api/transcript")
 def create_transcript(req: TranscriptRequest) -> dict[str, Any]:
     try:
@@ -62,6 +79,36 @@ def create_transcript(req: TranscriptRequest) -> dict[str, Any]:
 @app.get("/api/transcripts")
 def list_transcripts() -> dict[str, Any]:
     return {"count": len(_transcripts), "transcripts": _transcripts}
+
+
+@app.get("/api/thumbnail.svg")
+def thumbnail_svg(topic: str) -> Response:
+    try:
+        spec = thumbnail_agent.design(topic)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return Response(content=thumbnail_agent.render_svg(spec), media_type="image/svg+xml")
+
+
+@app.post("/api/pipeline/run")
+def run_pipeline(req: PipelineRequest) -> dict[str, Any]:
+    try:
+        result = pipeline.run_daily(req.topic, req.market)
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _transcripts.insert(0, result["transcript"])
+    return result
+
+
+@app.get("/api/videos")
+def list_videos() -> dict[str, Any]:
+    videos = pipeline.publisher.videos()
+    return {
+        "count": len(videos),
+        "videos": [
+            {**v.to_dict(), "metrics": pipeline.publisher.track(v.video_id)} for v in videos
+        ],
+    }
 
 
 @app.get("/", response_class=HTMLResponse)

@@ -8,15 +8,23 @@ offline logic so the app runs and is testable without any API keys. Real
 integrations (LLMs, market-data APIs, YouTube Data API, thumbnail generation,
 uploads) plug into the clearly marked seams in `gary/agents/`.
 
-## Roadmap (tracked in issues)
+## Roadmap (tracked in issues) → starter modules
 
-1. Agent to build YouTube finance transcripts from real internet data (#1)
-2. Agent to scrape the stock market and YouTube for trending topics (#2)
-3. Agent to scrape crypto for trending coins / DeFi opportunities (#3)
-4. Agent to produce daily 10-min videos and daily shorts (#4)
-5. Agent to auto-generate thumbnails (#5)
-6. Agent to upload videos, manage comments, track performance (#6)
-7. Dashboard to track everything (#7)
+Each issue now has a runnable starter module with a clear extension seam
+(marked `# NOTE: replace ...`) so work can begin independently.
+
+| Issue | Focus | Starter module / seam |
+|-------|-------|-----------------------|
+| #1 | YouTube finance transcripts | `gary/agents/transcript_agent.py` → `_draft_body` |
+| #2 | Stock market + YouTube trends | `gary/agents/trends_agent.py` → `_fetch` / `_fetch_youtube` |
+| #3 | Crypto / DeFi trends | `gary/agents/trends_agent.py` → `_fetch("crypto")` |
+| #4 | Daily long videos + shorts | `gary/agents/video_agent.py` → `_broll_for` |
+| #5 | Thumbnails | `gary/agents/thumbnail_agent.py` → `render_svg` |
+| #6 | Upload + comments + performance | `gary/agents/publisher_agent.py` → `upload` / `track` |
+| #7 | Tracking dashboard | `gary/app.py` + `gary/templates/dashboard.html` |
+
+`gary/pipeline.py` chains all of them into one `run_daily()` flow:
+trend → transcript → long+short video plans → thumbnail → publish → track.
 
 ## Development
 
@@ -44,5 +52,9 @@ python3 -m venv .venv
 - `GET /` — dashboard
 - `GET /api/health` — health check
 - `GET /api/trends?market=stocks|crypto&limit=N` — trending assets
+- `GET /api/youtube-trends?limit=N` — trending YouTube finance topics
 - `POST /api/transcript` — body `{"topic": "...", "data_points": [...]}` → transcript
 - `GET /api/transcripts` — recently generated transcripts
+- `GET /api/thumbnail.svg?topic=...` — rendered thumbnail (SVG)
+- `POST /api/pipeline/run` — body `{"topic": "..."?}` → full daily content plan
+- `GET /api/videos` — published videos + performance metrics

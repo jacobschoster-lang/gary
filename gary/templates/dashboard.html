@@ -47,6 +47,7 @@
       <h2>Generate a transcript</h2>
       <input id="topic" placeholder="e.g. Bitcoin ETF inflows" />
       <button onclick="generate()">Generate</button>
+      <button onclick="runPipeline()" style="background:#059669;border-color:#059669;margin-left:6px;">Run daily pipeline</button>
       <pre id="out" style="margin-top:12px; display:none;"></pre>
     </div>
 
@@ -56,6 +57,13 @@
         <div><h2>Stocks</h2><ul id="stocks"></ul></div>
         <div><h2>Crypto</h2><ul id="crypto"></ul></div>
       </div>
+      <h2 style="margin-top:16px;">YouTube topics</h2>
+      <ul id="youtube"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Published videos</h2>
+      <ul id="videos"><li class="muted">Run the pipeline to publish a video.</li></ul>
     </div>
 
     <div class="card">
@@ -79,6 +87,26 @@
       out.textContent = data.title + "\n\n" +
         data.sections.map(s => s.heading + ": " + s.script).join("\n\n");
     }
+    async function runPipeline() {
+      const topic = document.getElementById('topic').value.trim();
+      const res = await fetch('/api/pipeline/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(topic ? { topic } : {})
+      });
+      const data = await res.json();
+      const out = document.getElementById('out');
+      out.style.display = 'block';
+      out.textContent =
+        "Topic: " + data.topic + "\n" +
+        "Long video: " + data.video_long.total_seconds + "s over " +
+          data.video_long.segments.length + " segments\n" +
+        "Short video: " + data.video_short.total_seconds + "s\n" +
+        "Thumbnail: " + data.thumbnail.badge + " / " + data.thumbnail.headline + "\n" +
+        "Published: " + data.published.url + "\n" +
+        "Metrics: " + JSON.stringify(data.metrics);
+      loadVideos();
+    }
     async function loadTrends(market, elId) {
       const res = await fetch('/api/trends?market=' + market);
       const data = await res.json();
@@ -86,8 +114,26 @@
         .map(t => `<li>${t.symbol} <span class="muted">${t.name} · ${t.score}</span></li>`)
         .join('');
     }
+    async function loadYouTube() {
+      const res = await fetch('/api/youtube-trends');
+      const data = await res.json();
+      document.getElementById('youtube').innerHTML = data.topics
+        .map(t => `<li>${t.title} <span class="muted">${t.channel} · ${t.views.toLocaleString()} views</span></li>`)
+        .join('');
+    }
+    async function loadVideos() {
+      const res = await fetch('/api/videos');
+      const data = await res.json();
+      const el = document.getElementById('videos');
+      if (!data.count) return;
+      el.innerHTML = data.videos
+        .map(v => `<li><a href="${v.url}" target="_blank">${v.title}</a> <span class="muted">${v.kind} · ${v.metrics.views.toLocaleString()} views · CTR ${v.metrics.ctr_percent}%</span></li>`)
+        .join('');
+    }
     loadTrends('stocks', 'stocks');
     loadTrends('crypto', 'crypto');
+    loadYouTube();
+    loadVideos();
   </script>
 </body>
 </html>
