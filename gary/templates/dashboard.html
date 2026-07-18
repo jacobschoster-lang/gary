@@ -48,7 +48,9 @@
       <input id="topic" placeholder="e.g. Bitcoin ETF inflows" />
       <button onclick="generate()">Generate</button>
       <button onclick="runPipeline()" style="background:#059669;border-color:#059669;margin-left:6px;">Run daily pipeline</button>
+      <button onclick="previewVideo()" style="background:#7c3aed;border-color:#7c3aed;margin-left:6px;">Preview stick-figure video</button>
       <pre id="out" style="margin-top:12px; display:none;"></pre>
+      <video id="preview" style="margin-top:12px; width:100%; display:none;" controls></video>
     </div>
 
     <div class="card">
@@ -106,6 +108,14 @@
         "Published: " + data.published.url + "\n" +
         "Metrics: " + JSON.stringify(data.metrics);
       loadVideos();
+    }
+    function previewVideo() {
+      const topic = document.getElementById('topic').value.trim() || 'Bitcoin ETF inflows';
+      const v = document.getElementById('preview');
+      v.style.display = 'block';
+      v.src = '/api/story.mp4?topic=' + encodeURIComponent(topic) + '&t=' + Date.now();
+      v.load();
+      v.play().catch(() => {});
     }
     async function loadTrends(market, elId) {
       const res = await fetch('/api/trends?market=' + market);

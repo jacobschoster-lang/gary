@@ -72,9 +72,24 @@ export YOUTUBE_CLIENT_SECRET=...
 .venv/bin/python scripts/youtube_authorize.py
 ```
 
-Without credentials/video the job does a safe **dry run** (writes a manifest to
-`out/`, uploads nothing). Note: producing the actual MP4 (TTS + visuals) is a
-separate rendering step still to be built; `GARY_VIDEO_FILE` is the seam.
+Without credentials the job does a safe **dry run** (renders the video + writes a
+manifest to `out/`, uploads nothing).
+
+### Animated stick-figure videos
+
+`gary/render/` turns a content plan into an animated **stick-figure** MP4: a
+title card, then one scene per story beat with a gesturing stick figure, a
+finance prop (coin / bar chart / up-arrow), and a narration caption. The daily
+job auto-renders this video when `GARY_VIDEO_FILE` is not set. Rendering uses
+Pillow for frames and the system **`ffmpeg`** binary for H.264 encoding (the
+workflow installs ffmpeg; it's also pre-installed on the dev VM). Preview one:
+
+```bash
+.venv/bin/python -c "from gary.pipeline import ContentPipeline; from gary.render import render_story; render_story(ContentPipeline().run_daily(topic='Bitcoin ETF inflows'), 'story.mp4')"
+```
+
+Or in the dashboard, click **Preview stick-figure video** (`GET /api/story.mp4?topic=...`).
+Currently the video has no voiceover; TTS narration is the next enhancement.
 
 Run/inspect manually:
 

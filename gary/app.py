@@ -7,15 +7,17 @@ Run in development with:
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from gary.agents import ThumbnailAgent, TranscriptAgent, TrendsAgent
 from gary.pipeline import ContentPipeline
+from gary.render import render_story
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -98,6 +100,18 @@ def run_pipeline(req: PipelineRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _transcripts.insert(0, result["transcript"])
     return result
+
+
+@app.get("/api/story.mp4")
+def story_video(topic: str) -> FileResponse:
+    """Render a short animated stick-figure video for a topic (preview)."""
+    plan = pipeline.run_daily(topic=topic)
+    out_path = Path(tempfile.gettempdir()) / "gary_preview.mp4"
+    try:
+        render_story(plan, out_path=str(out_path), fps=10, seconds_per_scene=2.5)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return FileResponse(str(out_path), media_type="video/mp4", filename="story.mp4")
 
 
 @app.get("/api/videos")

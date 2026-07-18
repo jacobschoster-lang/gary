@@ -27,6 +27,7 @@ from typing import Any
 from gary.integrations.youtube import YouTubeUploader
 from gary.jobs.schedule import should_run_now
 from gary.pipeline import ContentPipeline
+from gary.render import render_story
 
 CHANNEL_HANDLE = "@StickfigureFinance-r8m"
 
@@ -80,15 +81,23 @@ def run(
         return result
 
     uploader = YouTubeUploader.from_env()
+
+    # Use a supplied file, otherwise render an animated stick-figure video.
     video_file = video_file or os.environ.get("GARY_VIDEO_FILE")
+    if not video_file:
+        try:
+            video_file = render_story(plan, out_path=str(Path(out_dir) / "story.mp4"))
+            result["video_file"] = video_file
+        except Exception as exc:  # ffmpeg missing, etc.
+            result["reason"] = f"video render failed: {exc}"
+            _write_manifest(out_dir, plan, result)
+            return result
 
     if uploader is None:
         result["reason"] = (
             "YouTube credentials not configured "
             "(YOUTUBE_CLIENT_ID/SECRET/REFRESH_TOKEN)"
         )
-    elif not video_file:
-        result["reason"] = "no rendered video file provided (--video-file / GARY_VIDEO_FILE)"
     else:
         upload = uploader.upload(
             video_path=video_file,

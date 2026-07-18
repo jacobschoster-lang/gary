@@ -24,8 +24,11 @@ Daily YouTube posting:
   `YOUTUBE_REFRESH_TOKEN` are set AND a rendered MP4 is provided via
   `--video-file` / `GARY_VIDEO_FILE`. Uploads need OAuth on the channel owner's
   account (an API key cannot upload).
-- Real video rendering (MP4 from the transcript/thumbnail) is not implemented
-  yet; `GARY_VIDEO_FILE` is the intended seam.
+- Video rendering lives in `gary/render/` (animated stick figures via Pillow +
+  system `ffmpeg`). The daily job auto-renders an MP4 when `GARY_VIDEO_FILE` is
+  unset. Rendering requires the `ffmpeg` binary (a runtime system dependency,
+  pre-installed on the dev VM and installed by the workflow) — it is not a pip
+  package. Videos currently have no audio; TTS narration is the next seam.
 
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly
