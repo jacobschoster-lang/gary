@@ -35,6 +35,7 @@ from gary.finance import (
 )
 from gary.finance.models import Profile
 from gary.pipeline import ContentPipeline
+from gary.realestate import search_listings
 from gary.render import render_story
 
 app = FastAPI(title="gary", version="0.1.0")
@@ -339,6 +340,19 @@ def load_sample_finance() -> dict[str, Any]:
     record_snapshot(profile)
     finance_store.save(profile)
     return _finance_payload(profile)
+
+
+@app.get("/api/realestate")
+def realestate(
+    city: str = "Cincinnati",
+    state: str = "OH",
+    radius: float = 25,
+    min_acres: float = 5.0,
+    max_price: float = 350000.0,
+) -> dict[str, Any]:
+    return search_listings(
+        city=city, state=state, radius=radius, min_acres=min_acres, max_price=max_price
+    )
 
 
 @app.get("/", response_class=HTMLResponse)

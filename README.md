@@ -97,6 +97,18 @@ The access token is stored locally in `finance_data/plaid.json` (gitignored). En
 `POST /api/finance/plaid/exchange`, `POST /api/finance/plaid/sync`. Image OCR
 requires the `tesseract` system binary (pre-installed on the dev VM).
 
+## Real estate search
+
+The dashboard "Land & homes for sale" card and `GET /api/realestate` find active
+listings by radius, minimum acreage, and max price (e.g. within 25 mi of
+Cincinnati, OH, 5+ acres, under $350k). Live data comes from **RentCast**
+(`gary/realestate/`) when `RENTCAST_API_KEY` is set (free tier available);
+otherwise it returns a small labeled **sample** dataset so the feature works
+offline. Results are filtered client-side by acreage/price and annotated with
+distance from the search center.
+
+Params: `city`, `state`, `radius` (mi), `min_acres`, `max_price`.
+
 ## Development
 
 Requires Python 3.10+.

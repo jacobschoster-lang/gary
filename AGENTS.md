@@ -69,6 +69,13 @@ Personal finance:
   unconfigured; the connector uses httpx directly (no Plaid SDK), so tests mock
   `gary.finance.plaid.httpx.post`.
 
+Real estate:
+- `gary/realestate/` powers the dashboard "Land & homes for sale" card and
+  `GET /api/realestate` (radius + min acres + max price). Live listings need
+  `RENTCAST_API_KEY` (free tier); without it, it returns a labeled sample set.
+  Radius search centers on coords in `CITY_COORDS` (Cincinnati and a few metros);
+  acreage/price are filtered client-side (RentCast returns lotSize in sqft).
+
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly
   (not pip-installed), so the working directory must be the repo root for

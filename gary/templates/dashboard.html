@@ -204,6 +204,21 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>Land &amp; homes for sale</h2>
+      <p class="muted" style="margin-top:0;">Active listings by radius, minimum acreage, and max price.</p>
+      <div class="grid3">
+        <div class="field"><label>City</label><input id="re_city" value="Cincinnati" /></div>
+        <div class="field"><label>State</label><input id="re_state" value="OH" /></div>
+        <div class="field"><label>Radius (mi)</label><input id="re_radius" type="number" value="25" /></div>
+        <div class="field"><label>Min acres</label><input id="re_acres" type="number" value="5" /></div>
+        <div class="field"><label>Max price ($)</label><input id="re_price" type="number" value="350000" /></div>
+        <div class="field" style="display:flex;align-items:flex-end;"><button onclick="searchRealEstate()" style="width:100%;">Search</button></div>
+      </div>
+      <div class="muted" id="re_msg" style="margin-top:4px;"></div>
+      <ul id="re_results" style="margin-top:10px;"></ul>
+    </div>
+
     <div class="section-title">Content platform</div>
 
     <div class="card">
@@ -551,6 +566,36 @@
       fillForm(d.profile); renderFinance(d); renderCashflow(d);
     }
 
+    // ---------- Real estate ----------
+    async function searchRealEstate() {
+      const msg = document.getElementById('re_msg');
+      const results = document.getElementById('re_results');
+      msg.textContent = 'Searching…'; results.innerHTML = '';
+      const q = new URLSearchParams({
+        city: document.getElementById('re_city').value || 'Cincinnati',
+        state: document.getElementById('re_state').value || 'OH',
+        radius: document.getElementById('re_radius').value || 25,
+        min_acres: document.getElementById('re_acres').value || 5,
+        max_price: document.getElementById('re_price').value || 350000,
+      });
+      const res = await fetch('/api/realestate?' + q.toString());
+      const data = await res.json();
+      const src = data.source === 'rentcast'
+        ? '<span class="badge badge-ok">live</span>'
+        : '<span class="badge badge-warn">sample data — add RENTCAST_API_KEY for live</span>';
+      msg.innerHTML = `${data.count} listings within ${data.filters.radius} mi of ` +
+        `${data.filters.city}, ${data.filters.state} · ${data.filters.min_acres}+ acres · ` +
+        `under ${money(data.filters.max_price)} ${src}`;
+      results.innerHTML = data.listings.map(l =>
+        `<li><a href="${l.url}" target="_blank">${l.address}, ${l.city} ${l.state}</a> ` +
+        `<span style="color:var(--green);font-weight:700;">${money(l.price)}</span> ` +
+        `<span class="muted">${l.acres} acres` +
+        (l.beds ? ` · ${l.beds}bd/${l.baths||'?'}ba` : '') +
+        (l.distance_mi != null ? ` · ${l.distance_mi} mi` : '') +
+        (l.listed_date ? ` · listed ${l.listed_date}` : '') + `</span></li>`
+      ).join('') || '<li class="muted">No matching listings.</li>';
+    }
+
     // ---------- init ----------
     loadTrends('stocks', 'stocks');
     loadTrends('crypto', 'crypto');
@@ -558,6 +603,7 @@
     loadVideos();
     loadFinance();
     plaidStatus();
+    searchRealEstate();
   </script>
 </body>
 </html>
