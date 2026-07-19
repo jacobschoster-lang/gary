@@ -10,6 +10,7 @@ from gary.finance.debt import compare_strategies, payoff_plan
 from gary.finance.models import Asset, Debt, Profile
 from gary.finance.networth import net_worth, net_worth_breakdown, record_snapshot
 from gary.finance.plaid import PlaidClient, PlaidError, PlaidTokenStore
+from gary.finance.retirement import retirement_plan
 from gary.finance.store import ProfileStore, sample_profile
 from gary.finance.transactions import (
     Transaction,
@@ -30,6 +31,7 @@ __all__ = [
     "payoff_plan",
     "compare_strategies",
     "financial_health",
+    "retirement_plan",
     "cashflow_summary",
     "parse_csv",
     "ocr_import",

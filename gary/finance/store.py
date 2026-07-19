@@ -39,6 +39,9 @@ def sample_profile() -> Profile:
         monthly_income=6000.0,
         monthly_expenses=4200.0,
         extra_debt_payment=400.0,
+        age=34,
+        retirement_age=65,
+        monthly_retirement_contribution=300.0,
         assets=[
             Asset("Checking + Savings", 9000.0, "cash"),
             Asset("401(k)", 32000.0, "investment"),

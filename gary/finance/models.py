@@ -37,6 +37,9 @@ class Profile:
     monthly_income: float = 0.0
     monthly_expenses: float = 0.0
     extra_debt_payment: float = 0.0
+    age: int = 0
+    retirement_age: int = 65
+    monthly_retirement_contribution: float = 0.0
     assets: list[Asset] = field(default_factory=list)
     debts: list[Debt] = field(default_factory=list)
     networth_history: list[dict[str, Any]] = field(default_factory=list)
@@ -47,6 +50,9 @@ class Profile:
             "monthly_income": self.monthly_income,
             "monthly_expenses": self.monthly_expenses,
             "extra_debt_payment": self.extra_debt_payment,
+            "age": self.age,
+            "retirement_age": self.retirement_age,
+            "monthly_retirement_contribution": self.monthly_retirement_contribution,
             "assets": [a.to_dict() for a in self.assets],
             "debts": [d.to_dict() for d in self.debts],
             "networth_history": self.networth_history,
@@ -62,6 +68,11 @@ class Profile:
             monthly_income=float(data.get("monthly_income", 0) or 0),
             monthly_expenses=float(data.get("monthly_expenses", 0) or 0),
             extra_debt_payment=float(data.get("extra_debt_payment", 0) or 0),
+            age=int(data.get("age", 0) or 0),
+            retirement_age=int(data.get("retirement_age", 65) or 65),
+            monthly_retirement_contribution=float(
+                data.get("monthly_retirement_contribution", 0) or 0
+            ),
             assets=[
                 Asset(
                     name=str(a.get("name", "")),

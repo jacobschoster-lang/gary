@@ -32,7 +32,7 @@ def test_create_and_list_transcript():
 def test_dashboard_renders():
     res = client.get("/")
     assert res.status_code == 200
-    assert "gary" in res.text
+    assert "Stickfigure Finance" in res.text
 
 
 def test_youtube_trends_endpoint():

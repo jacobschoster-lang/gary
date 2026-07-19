@@ -30,6 +30,7 @@ from gary.finance import (
     ocr_import,
     parse_csv,
     record_snapshot,
+    retirement_plan,
     sample_profile,
 )
 from gary.finance.models import Profile
@@ -168,6 +169,9 @@ class FinanceProfileIn(BaseModel):
     monthly_income: float = 0.0
     monthly_expenses: float = 0.0
     extra_debt_payment: float = 0.0
+    age: int = 0
+    retirement_age: int = 65
+    monthly_retirement_contribution: float = 0.0
     assets: list[AssetIn] = Field(default_factory=list)
     debts: list[DebtIn] = Field(default_factory=list)
 
@@ -180,6 +184,7 @@ def _finance_payload(profile: Profile) -> dict[str, Any]:
         "history": profile.networth_history,
         "debt_plan": compare_strategies(profile.debts, profile.extra_debt_payment),
         "health": financial_health(profile),
+        "retirement": retirement_plan(profile),
         "cashflow": cashflow,
         "recent_transactions": [t.to_dict() for t in profile.transactions[-15:][::-1]],
     }
