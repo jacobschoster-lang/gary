@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>gary — finance content dashboard</title>
+  <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
@@ -95,6 +96,12 @@
       <input id="fin_file" type="file" accept=".csv,image/*" />
       <button onclick="importFinance()">Import document</button>
       <span id="fin_import_msg" class="muted"></span>
+
+      <div style="margin-top:12px;">
+        <button id="plaid_connect" onclick="plaidConnect()" style="background:#0ea5e9;border-color:#0ea5e9;" disabled>Connect a bank (Plaid)</button>
+        <button id="plaid_sync" onclick="plaidSync()" style="background:#334155;border-color:#334155;margin-left:6px; display:none;">Sync bank</button>
+        <span id="plaid_msg" class="muted"></span>
+      </div>
 
       <div id="cf_out" style="margin-top:16px; display:none;">
         <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:baseline;">
@@ -338,7 +345,60 @@
       if ((data.profile.assets || []).length || (data.profile.debts || []).length) renderFinance(data);
       renderCashflow(data);
     }
+
+    // ---- Plaid ----
+    async function plaidStatus() {
+      const res = await fetch('/api/finance/plaid/status');
+      const s = await res.json();
+      const connect = document.getElementById('plaid_connect');
+      const sync = document.getElementById('plaid_sync');
+      const msg = document.getElementById('plaid_msg');
+      if (!s.configured) {
+        connect.disabled = true;
+        msg.textContent = 'Plaid not configured — add PLAID_CLIENT_ID and PLAID_SECRET to enable.';
+        return;
+      }
+      connect.disabled = false;
+      msg.textContent = `Plaid ready (${s.env}).` + (s.linked ? ' Bank linked.' : '');
+      sync.style.display = s.linked ? 'inline-block' : 'none';
+    }
+    async function plaidConnect() {
+      const msg = document.getElementById('plaid_msg');
+      msg.textContent = 'Opening Plaid…';
+      const res = await fetch('/api/finance/plaid/link-token', {method: 'POST'});
+      const data = await res.json();
+      if (!res.ok) { msg.textContent = 'Error: ' + (data.detail || 'link token failed'); return; }
+      if (typeof Plaid === 'undefined') { msg.textContent = 'Plaid Link script not loaded.'; return; }
+      const handler = Plaid.create({
+        token: data.link_token,
+        onSuccess: async (public_token) => {
+          msg.textContent = 'Linking & pulling accounts…';
+          const ex = await fetch('/api/finance/plaid/exchange', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({public_token}),
+          });
+          const d = await ex.json();
+          if (!ex.ok) { msg.textContent = 'Error: ' + (d.detail || 'exchange failed'); return; }
+          msg.textContent = `Linked! Pulled ${d.imported.added} transactions.`;
+          fillForm(d.profile); renderFinance(d); renderCashflow(d);
+          plaidStatus();
+        },
+        onExit: (err) => { if (err) msg.textContent = 'Plaid exited: ' + (err.display_message || err.error_message || ''); },
+      });
+      handler.open();
+    }
+    async function plaidSync() {
+      const msg = document.getElementById('plaid_msg');
+      msg.textContent = 'Syncing…';
+      const res = await fetch('/api/finance/plaid/sync', {method: 'POST'});
+      const d = await res.json();
+      if (!res.ok) { msg.textContent = 'Error: ' + (d.detail || 'sync failed'); return; }
+      msg.textContent = `Synced ${d.imported.added} transactions.`;
+      fillForm(d.profile); renderFinance(d); renderCashflow(d);
+    }
+
     loadFinance();
+    plaidStatus();
   </script>
 </body>
 </html>

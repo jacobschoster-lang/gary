@@ -80,10 +80,21 @@ import your accounts and it:
 - computes a financial-health score with prioritized recommendations.
 
 Data is entered by the user and persisted locally to `finance_data/profile.json`
-(configurable via `GARY_FINANCE_FILE`); there is no bank access. Automatic account
-aggregation (e.g. Plaid) is a future integration that would populate the same
-`Profile` model. Endpoints: `GET/POST /api/finance`, `POST /api/finance/sample`,
-`POST /api/finance/import` (multipart file upload: CSV or image). Image OCR
+(configurable via `GARY_FINANCE_FILE`).
+
+Automatic bank aggregation via **Plaid** (`gary/finance/plaid.py`) pulls real
+balances (→ assets/debts) and transactions (→ cashflow). Click "Connect a bank
+(Plaid)" on the dashboard, log in through Plaid Link, and accounts sync in. It's
+enabled only when configured, and degrades to manual/file import otherwise:
+
+- `PLAID_CLIENT_ID`, `PLAID_SECRET` (required to enable)
+- `PLAID_ENV` — `sandbox` (default) | `development` | `production`
+
+In `sandbox`, log in with Plaid's test credentials (`user_good` / `pass_good`).
+The access token is stored locally in `finance_data/plaid.json` (gitignored). Endpoints: `GET/POST /api/finance`, `POST /api/finance/sample`,
+`POST /api/finance/import` (multipart file upload: CSV or image), and Plaid:
+`GET /api/finance/plaid/status`, `POST /api/finance/plaid/link-token`,
+`POST /api/finance/plaid/exchange`, `POST /api/finance/plaid/sync`. Image OCR
 requires the `tesseract` system binary (pre-installed on the dev VM).
 
 ## Development

@@ -7,6 +7,7 @@ Run in development with:
 
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,9 @@ from pydantic import BaseModel, Field
 
 from gary.agents import ThumbnailAgent, TranscriptAgent, TrendsAgent
 from gary.finance import (
+    PlaidClient,
+    PlaidError,
+    PlaidTokenStore,
     ProfileStore,
     cashflow_summary,
     compare_strategies,
@@ -46,6 +50,8 @@ trends_agent = TrendsAgent()
 thumbnail_agent = ThumbnailAgent()
 pipeline = ContentPipeline()
 finance_store = ProfileStore()
+plaid_tokens = PlaidTokenStore()
+_PLAID_NOT_CONFIGURED = "Plaid not configured (set PLAID_CLIENT_ID/SECRET)"
 
 
 class TranscriptRequest(BaseModel):
@@ -237,6 +243,86 @@ async def import_finance_document(file: UploadFile = File(...)) -> dict[str, Any
     finance_store.save(profile)
     payload = _finance_payload(profile)
     payload["imported"] = {"source": source, "added": len(incoming)}
+    return payload
+
+
+class PlaidExchangeIn(BaseModel):
+    public_token: str = Field(..., min_length=1)
+
+
+def _merge_plaid_pull(assets, debts, txns) -> Profile:
+    """Merge freshly pulled Plaid data into the saved profile."""
+    profile = finance_store.load()
+    # Replace Plaid-sourced accounts by name, keep user-added ones.
+    plaid_asset_names = {a.name for a in assets}
+    plaid_debt_names = {d.name for d in debts}
+    profile.assets = [a for a in profile.assets if a.name not in plaid_asset_names] + assets
+    profile.debts = [d for d in profile.debts if d.name not in plaid_debt_names] + debts
+    profile.transactions = dedupe(profile.transactions, txns)
+    _apply_cashflow_to_profile(profile)
+    record_snapshot(profile)
+    finance_store.save(profile)
+    return profile
+
+
+@app.get("/api/finance/plaid/status")
+def plaid_status() -> dict[str, Any]:
+    client = PlaidClient.from_env()
+    return {
+        "configured": client is not None,
+        "env": (os.environ.get("PLAID_ENV", "sandbox") if client else None),
+        "linked": plaid_tokens.linked(),
+    }
+
+
+@app.post("/api/finance/plaid/link-token")
+def plaid_link_token() -> dict[str, Any]:
+    client = PlaidClient.from_env()
+    if client is None:
+        raise HTTPException(status_code=400, detail=_PLAID_NOT_CONFIGURED)
+    try:
+        return {"link_token": client.create_link_token()}
+    except PlaidError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/finance/plaid/exchange")
+def plaid_exchange(req: PlaidExchangeIn) -> dict[str, Any]:
+    client = PlaidClient.from_env()
+    if client is None:
+        raise HTTPException(status_code=400, detail=_PLAID_NOT_CONFIGURED)
+    try:
+        access_token = client.exchange_public_token(req.public_token)
+        plaid_tokens.add(access_token)
+        assets, debts, txns = client.pull(access_token)
+    except PlaidError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    profile = _merge_plaid_pull(assets, debts, txns)
+    payload = _finance_payload(profile)
+    payload["imported"] = {"source": "plaid", "added": len(txns)}
+    return payload
+
+
+@app.post("/api/finance/plaid/sync")
+def plaid_sync() -> dict[str, Any]:
+    client = PlaidClient.from_env()
+    if client is None:
+        raise HTTPException(status_code=400, detail=_PLAID_NOT_CONFIGURED)
+    tokens = plaid_tokens.access_tokens()
+    if not tokens:
+        raise HTTPException(status_code=400, detail="no linked bank; connect one first")
+    all_assets, all_debts, all_txns = [], [], []
+    try:
+        for tok in tokens:
+            a, d, t = client.pull(tok)
+            all_assets += a
+            all_debts += d
+            all_txns += t
+    except PlaidError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    profile = _merge_plaid_pull(all_assets, all_debts, all_txns)
+    payload = _finance_payload(profile)
+    payload["imported"] = {"source": "plaid", "added": len(all_txns)}
     return payload
 
 

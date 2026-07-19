@@ -62,6 +62,12 @@ Personal finance:
 - Image ("snapshot") import uses OCR via the `tesseract` system binary
   (pre-installed on the dev VM; `pytesseract` is the Python wrapper) — CSV is
   more accurate. File uploads need `python-multipart`.
+- Plaid bank aggregation (`gary/finance/plaid.py`) is enabled only when
+  `PLAID_CLIENT_ID`/`PLAID_SECRET` are set (`PLAID_ENV` defaults to `sandbox`;
+  test login `user_good`/`pass_good`). The access token persists to
+  `finance_data/plaid.json` (gitignored). Endpoints degrade to HTTP 400 when
+  unconfigured; the connector uses httpx directly (no Plaid SDK), so tests mock
+  `gary.finance.plaid.httpx.post`.
 
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly
