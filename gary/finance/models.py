@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from gary.finance.transactions import Transaction
 
 AssetKind = Literal["cash", "investment", "property", "other"]
 
@@ -37,6 +40,7 @@ class Profile:
     assets: list[Asset] = field(default_factory=list)
     debts: list[Debt] = field(default_factory=list)
     networth_history: list[dict[str, Any]] = field(default_factory=list)
+    transactions: list[Transaction] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -46,10 +50,13 @@ class Profile:
             "assets": [a.to_dict() for a in self.assets],
             "debts": [d.to_dict() for d in self.debts],
             "networth_history": self.networth_history,
+            "transactions": [t.to_dict() for t in self.transactions],
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Profile:
+        from gary.finance.transactions import Transaction
+
         data = data or {}
         return cls(
             monthly_income=float(data.get("monthly_income", 0) or 0),
@@ -73,4 +80,13 @@ class Profile:
                 for d in data.get("debts", [])
             ],
             networth_history=list(data.get("networth_history", [])),
+            transactions=[
+                Transaction(
+                    date=str(t.get("date", "")),
+                    description=str(t.get("description", "")),
+                    amount=float(t.get("amount", 0) or 0),
+                    category=str(t.get("category", "Other")),
+                )
+                for t in data.get("transactions", [])
+            ],
         )

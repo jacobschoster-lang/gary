@@ -70,6 +70,10 @@ trend → transcript → long+short video plans → thumbnail → publish → tr
 The dashboard includes a "My finances" tool (`gary/finance/`) where you enter or
 import your accounts and it:
 
+- tracks cashflow/income from imported transactions — upload a bank **CSV**
+  export (signed `Amount` or `Debit`/`Credit` columns) or a statement
+  **image snapshot** (best-effort OCR via Tesseract); transactions are
+  auto-categorized into income sources and expense categories,
 - tracks net worth (assets − debts) with a saved history of snapshots,
 - builds debt-payoff plans and compares avalanche (highest APR first) vs snowball
   (smallest balance first), showing payoff time and total interest,
@@ -78,7 +82,9 @@ import your accounts and it:
 Data is entered by the user and persisted locally to `finance_data/profile.json`
 (configurable via `GARY_FINANCE_FILE`); there is no bank access. Automatic account
 aggregation (e.g. Plaid) is a future integration that would populate the same
-`Profile` model. Endpoints: `GET/POST /api/finance`, `POST /api/finance/sample`.
+`Profile` model. Endpoints: `GET/POST /api/finance`, `POST /api/finance/sample`,
+`POST /api/finance/import` (multipart file upload: CSV or image). Image OCR
+requires the `tesseract` system binary (pre-installed on the dev VM).
 
 ## Development
 

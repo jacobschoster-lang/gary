@@ -53,6 +53,16 @@ Daily YouTube posting:
   variants out of `/usr/local/lib/ollama/` (keep `libggml-cpu-haswell.so` = AVX2)
   and restarting `ollama serve`, which forces the stable AVX2 path.
 
+Personal finance:
+- `gary/finance/` powers the dashboard "My finances" + "Cash flow" cards
+  (net worth, debt payoff, health advice, and CSV/image transaction import).
+- Data persists to `finance_data/profile.json` (gitignored; override with
+  `GARY_FINANCE_FILE`). Importing a bank CSV or image derives monthly
+  income/expenses automatically.
+- Image ("snapshot") import uses OCR via the `tesseract` system binary
+  (pre-installed on the dev VM; `pytesseract` is the Python wrapper) — CSV is
+  more accurate. File uploads need `python-multipart`.
+
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly
   (not pip-installed), so the working directory must be the repo root for

@@ -11,16 +11,20 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from gary.agents import ThumbnailAgent, TranscriptAgent, TrendsAgent
 from gary.finance import (
     ProfileStore,
+    cashflow_summary,
     compare_strategies,
+    dedupe,
     financial_health,
     net_worth_breakdown,
+    ocr_import,
+    parse_csv,
     record_snapshot,
     sample_profile,
 )
@@ -163,13 +167,27 @@ class FinanceProfileIn(BaseModel):
 
 
 def _finance_payload(profile: Profile) -> dict[str, Any]:
+    cashflow = cashflow_summary(profile.transactions)
     return {
         "profile": profile.to_dict(),
         "net_worth": net_worth_breakdown(profile),
         "history": profile.networth_history,
         "debt_plan": compare_strategies(profile.debts, profile.extra_debt_payment),
         "health": financial_health(profile),
+        "cashflow": cashflow,
+        "recent_transactions": [t.to_dict() for t in profile.transactions[-15:][::-1]],
     }
+
+
+def _apply_cashflow_to_profile(profile: Profile) -> None:
+    """Derive monthly income/expenses from imported transactions when present."""
+    if not profile.transactions:
+        return
+    cf = cashflow_summary(profile.transactions)
+    if cf["avg_monthly_income"]:
+        profile.monthly_income = cf["avg_monthly_income"]
+    if cf["avg_monthly_expenses"]:
+        profile.monthly_expenses = cf["avg_monthly_expenses"]
 
 
 @app.get("/api/finance")
@@ -184,6 +202,42 @@ def set_finance(req: FinanceProfileIn) -> dict[str, Any]:
     record_snapshot(profile)
     finance_store.save(profile)
     return _finance_payload(profile)
+
+
+@app.post("/api/finance/import")
+async def import_finance_document(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
+    """Import a bank CSV export or an image snapshot (best-effort OCR)."""
+    raw = await file.read()
+    name = (file.filename or "").lower()
+    ctype = (file.content_type or "").lower()
+
+    if name.endswith(".csv") or "csv" in ctype or "text" in ctype:
+        try:
+            text = raw.decode("utf-8-sig", errors="replace")
+        except Exception as exc:  # pragma: no cover - decode is very permissive
+            raise HTTPException(status_code=400, detail=f"could not read file: {exc}") from exc
+        incoming = parse_csv(text)
+        source = "csv"
+    elif name.endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")) or "image" in ctype:
+        incoming = ocr_import(raw)
+        source = "image"
+    else:
+        raise HTTPException(status_code=400, detail="upload a .csv or an image file")
+
+    if not incoming:
+        raise HTTPException(
+            status_code=422,
+            detail="no transactions found (CSV needs date/description/amount columns)",
+        )
+
+    profile = finance_store.load()
+    profile.transactions = dedupe(profile.transactions, incoming)
+    _apply_cashflow_to_profile(profile)
+    record_snapshot(profile)
+    finance_store.save(profile)
+    payload = _finance_payload(profile)
+    payload["imported"] = {"source": source, "added": len(incoming)}
+    return payload
 
 
 @app.post("/api/finance/sample")

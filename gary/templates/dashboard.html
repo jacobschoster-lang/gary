@@ -90,6 +90,29 @@
     </div>
 
     <div class="card">
+      <h2>Cash flow &amp; income</h2>
+      <p class="muted" style="margin-top:0;">Upload a bank CSV export or a statement screenshot for a true breakdown.</p>
+      <input id="fin_file" type="file" accept=".csv,image/*" />
+      <button onclick="importFinance()">Import document</button>
+      <span id="fin_import_msg" class="muted"></span>
+
+      <div id="cf_out" style="margin-top:16px; display:none;">
+        <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:baseline;">
+          <div><div class="muted">Income (total)</div><div id="cf_income" style="font-size:22px; font-weight:700; color:#22c55e;"></div></div>
+          <div><div class="muted">Expenses (total)</div><div id="cf_expenses" style="font-size:22px; font-weight:700; color:#f87171;"></div></div>
+          <div><div class="muted">Net cash flow</div><div id="cf_net" style="font-size:22px; font-weight:700;"></div></div>
+          <div><div class="muted">Avg / month</div><div id="cf_avg" style="font-size:16px;"></div></div>
+        </div>
+        <div class="grid" style="margin-top:14px;">
+          <div><h2>Income by source</h2><ul id="cf_income_src"></ul></div>
+          <div><h2>Expenses by category</h2><ul id="cf_expense_cat"></ul></div>
+        </div>
+        <h2 style="margin-top:14px;">Recent transactions</h2>
+        <ul id="cf_txns"></ul>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Trending now</h2>
       <div class="grid">
         <div><h2>Stocks</h2><ul id="stocks"></ul></div>
@@ -271,11 +294,49 @@
       const data = await res.json();
       fillForm(data.profile); renderFinance(data);
     }
+    function renderCashflow(data) {
+      const cf = data.cashflow;
+      if (!cf || !cf.transaction_count) return;
+      document.getElementById('cf_out').style.display = 'block';
+      document.getElementById('cf_income').textContent = money(cf.total_income);
+      document.getElementById('cf_expenses').textContent = money(cf.total_expenses);
+      const net = document.getElementById('cf_net');
+      net.textContent = money(cf.net_cashflow);
+      net.style.color = cf.net_cashflow >= 0 ? '#22c55e' : '#f87171';
+      document.getElementById('cf_avg').textContent =
+        `${money(cf.avg_monthly_income)} in / ${money(cf.avg_monthly_expenses)} out (${cf.months} mo)`;
+      document.getElementById('cf_income_src').innerHTML = cf.income_by_source
+        .map(s => `<li>${s.source} <span class="muted">${money(s.amount)}</span></li>`).join('')
+        || '<li class="muted">—</li>';
+      document.getElementById('cf_expense_cat').innerHTML = cf.expenses_by_category
+        .map(c => `<li>${c.category} <span class="muted">${money(c.amount)}</span></li>`).join('')
+        || '<li class="muted">—</li>';
+      document.getElementById('cf_txns').innerHTML = (data.recent_transactions || [])
+        .map(t => `<li>${t.date} ${t.description} ` +
+          `<span class="muted">${t.category}</span> ` +
+          `<span style="color:${t.amount>=0?'#22c55e':'#f87171'}">${money(t.amount)}</span></li>`).join('');
+    }
+    async function importFinance() {
+      const input = document.getElementById('fin_file');
+      const msg = document.getElementById('fin_import_msg');
+      if (!input.files.length) { msg.textContent = 'Choose a file first.'; return; }
+      msg.textContent = 'Importing…';
+      const fd = new FormData();
+      fd.append('file', input.files[0]);
+      const res = await fetch('/api/finance/import', {method: 'POST', body: fd});
+      const data = await res.json();
+      if (!res.ok) { msg.textContent = 'Error: ' + (data.detail || 'import failed'); return; }
+      msg.textContent = `Imported ${data.imported.added} rows from ${data.imported.source}.`;
+      fillForm(data.profile);
+      renderFinance(data);
+      renderCashflow(data);
+    }
     async function loadFinance() {
       const res = await fetch('/api/finance');
       const data = await res.json();
       fillForm(data.profile);
       if ((data.profile.assets || []).length || (data.profile.debts || []).length) renderFinance(data);
+      renderCashflow(data);
     }
     loadFinance();
   </script>

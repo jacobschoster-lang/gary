@@ -10,17 +10,29 @@ from gary.finance.debt import compare_strategies, payoff_plan
 from gary.finance.models import Asset, Debt, Profile
 from gary.finance.networth import net_worth, net_worth_breakdown, record_snapshot
 from gary.finance.store import ProfileStore, sample_profile
+from gary.finance.transactions import (
+    Transaction,
+    cashflow_summary,
+    dedupe,
+    ocr_import,
+    parse_csv,
+)
 
 __all__ = [
     "Asset",
     "Debt",
     "Profile",
+    "Transaction",
     "net_worth",
     "net_worth_breakdown",
     "record_snapshot",
     "payoff_plan",
     "compare_strategies",
     "financial_health",
+    "cashflow_summary",
+    "parse_csv",
+    "ocr_import",
+    "dedupe",
     "ProfileStore",
     "sample_profile",
 ]
