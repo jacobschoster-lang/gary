@@ -46,8 +46,10 @@ def sample_profile() -> Profile:
             Asset("Car", 15000.0, "property"),
         ],
         debts=[
+            # Note: the smallest balance (Store Card) is NOT the highest APR
+            # (Credit Card), so avalanche and snowball differ.
+            Debt("Store Card", 2000.0, 12.0, 45.0),
             Debt("Credit Card", 6500.0, 22.99, 150.0),
-            Debt("Car Loan", 12000.0, 6.5, 320.0),
             Debt("Student Loan", 18000.0, 4.5, 190.0),
         ],
     )
