@@ -16,6 +16,15 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from gary.agents import ThumbnailAgent, TranscriptAgent, TrendsAgent
+from gary.finance import (
+    ProfileStore,
+    compare_strategies,
+    financial_health,
+    net_worth_breakdown,
+    record_snapshot,
+    sample_profile,
+)
+from gary.finance.models import Profile
 from gary.pipeline import ContentPipeline
 from gary.render import render_story
 
@@ -32,6 +41,7 @@ transcript_agent = TranscriptAgent()
 trends_agent = TrendsAgent()
 thumbnail_agent = ThumbnailAgent()
 pipeline = ContentPipeline()
+finance_store = ProfileStore()
 
 
 class TranscriptRequest(BaseModel):
@@ -129,6 +139,61 @@ def list_videos() -> dict[str, Any]:
             {**v.to_dict(), "metrics": pipeline.publisher.track(v.video_id)} for v in videos
         ],
     }
+
+
+class AssetIn(BaseModel):
+    name: str
+    value: float = 0.0
+    kind: str = "other"
+
+
+class DebtIn(BaseModel):
+    name: str
+    balance: float = 0.0
+    apr: float = 0.0
+    min_payment: float = 0.0
+
+
+class FinanceProfileIn(BaseModel):
+    monthly_income: float = 0.0
+    monthly_expenses: float = 0.0
+    extra_debt_payment: float = 0.0
+    assets: list[AssetIn] = Field(default_factory=list)
+    debts: list[DebtIn] = Field(default_factory=list)
+
+
+def _finance_payload(profile: Profile) -> dict[str, Any]:
+    return {
+        "profile": profile.to_dict(),
+        "net_worth": net_worth_breakdown(profile),
+        "history": profile.networth_history,
+        "debt_plan": compare_strategies(profile.debts, profile.extra_debt_payment),
+        "health": financial_health(profile),
+    }
+
+
+@app.get("/api/finance")
+def get_finance() -> dict[str, Any]:
+    return _finance_payload(finance_store.load())
+
+
+@app.post("/api/finance")
+def set_finance(req: FinanceProfileIn) -> dict[str, Any]:
+    existing = finance_store.load()
+    profile = Profile.from_dict({**req.model_dump(), "networth_history": existing.networth_history})
+    record_snapshot(profile)
+    finance_store.save(profile)
+    return _finance_payload(profile)
+
+
+@app.post("/api/finance/sample")
+def load_sample_finance() -> dict[str, Any]:
+    existing = finance_store.load()
+    profile = sample_profile()
+    profile.networth_history = existing.networth_history
+    record_snapshot(profile)
+    finance_store.save(profile)
+    return _finance_payload(profile)
 
 
 @app.get("/", response_class=HTMLResponse)

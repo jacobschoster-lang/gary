@@ -54,6 +54,42 @@
     </div>
 
     <div class="card">
+      <h2>My finances</h2>
+      <div class="grid">
+        <div><input id="fin_income" type="number" placeholder="Monthly income" /></div>
+        <div><input id="fin_expenses" type="number" placeholder="Monthly expenses" /></div>
+      </div>
+      <input id="fin_extra" type="number" placeholder="Extra $/mo toward debt" />
+
+      <h2 style="margin-top:14px;">Assets</h2>
+      <div id="fin_assets"></div>
+      <button onclick="addAsset()" style="background:#334155;border-color:#334155;">+ Add asset</button>
+
+      <h2 style="margin-top:14px;">Debts</h2>
+      <div id="fin_debts"></div>
+      <button onclick="addDebt()" style="background:#334155;border-color:#334155;">+ Add debt</button>
+
+      <div style="margin-top:14px;">
+        <button onclick="saveFinance()">Save &amp; analyze</button>
+        <button onclick="loadSample()" style="background:#64748b;border-color:#64748b;margin-left:6px;">Load sample</button>
+      </div>
+
+      <div id="fin_out" style="margin-top:16px; display:none;">
+        <div style="display:flex; gap:24px; flex-wrap:wrap; align-items:baseline;">
+          <div><div class="muted">Net worth</div><div id="fin_networth" style="font-size:28px; font-weight:700;"></div></div>
+          <div><div class="muted">Health score</div><div id="fin_score" style="font-size:28px; font-weight:700;"></div></div>
+          <div><div class="muted">Monthly surplus</div><div id="fin_surplus" style="font-size:20px;"></div></div>
+        </div>
+        <h2 style="margin-top:16px;">Debt payoff options</h2>
+        <div id="fin_debtplan"></div>
+        <h2 style="margin-top:16px;">Recommendations</h2>
+        <ul id="fin_recs"></ul>
+        <h2 style="margin-top:16px;">Net worth history</h2>
+        <ul id="fin_history"></ul>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Trending now</h2>
       <div class="grid">
         <div><h2>Stocks</h2><ul id="stocks"></ul></div>
@@ -144,6 +180,104 @@
     loadTrends('crypto', 'crypto');
     loadYouTube();
     loadVideos();
+
+    // ---- Personal finance ----
+    const money = n => '$' + Number(n || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+    function assetRow(a = {}) {
+      const d = document.createElement('div'); d.className = 'grid fin-asset';
+      d.style.gridTemplateColumns = '2fr 1fr 1fr'; d.style.marginBottom = '6px';
+      d.innerHTML =
+        `<input class="a-name" placeholder="Asset name" value="${a.name || ''}"/>` +
+        `<input class="a-value" type="number" placeholder="Value" value="${a.value ?? ''}"/>` +
+        `<select class="a-kind">` +
+        ['cash','investment','property','other'].map(k =>
+          `<option value="${k}" ${a.kind===k?'selected':''}>${k}</option>`).join('') +
+        `</select>`;
+      return d;
+    }
+    function debtRow(d0 = {}) {
+      const d = document.createElement('div'); d.className = 'grid fin-debt';
+      d.style.gridTemplateColumns = '2fr 1fr 1fr 1fr'; d.style.marginBottom = '6px';
+      d.innerHTML =
+        `<input class="d-name" placeholder="Debt name" value="${d0.name || ''}"/>` +
+        `<input class="d-balance" type="number" placeholder="Balance" value="${d0.balance ?? ''}"/>` +
+        `<input class="d-apr" type="number" placeholder="APR %" value="${d0.apr ?? ''}"/>` +
+        `<input class="d-min" type="number" placeholder="Min pay" value="${d0.min_payment ?? ''}"/>`;
+      return d;
+    }
+    function addAsset(a) { document.getElementById('fin_assets').appendChild(assetRow(a)); }
+    function addDebt(d) { document.getElementById('fin_debts').appendChild(debtRow(d)); }
+
+    function collectProfile() {
+      const assets = [...document.querySelectorAll('.fin-asset')].map(r => ({
+        name: r.querySelector('.a-name').value,
+        value: parseFloat(r.querySelector('.a-value').value) || 0,
+        kind: r.querySelector('.a-kind').value,
+      })).filter(a => a.name);
+      const debts = [...document.querySelectorAll('.fin-debt')].map(r => ({
+        name: r.querySelector('.d-name').value,
+        balance: parseFloat(r.querySelector('.d-balance').value) || 0,
+        apr: parseFloat(r.querySelector('.d-apr').value) || 0,
+        min_payment: parseFloat(r.querySelector('.d-min').value) || 0,
+      })).filter(d => d.name);
+      return {
+        monthly_income: parseFloat(document.getElementById('fin_income').value) || 0,
+        monthly_expenses: parseFloat(document.getElementById('fin_expenses').value) || 0,
+        extra_debt_payment: parseFloat(document.getElementById('fin_extra').value) || 0,
+        assets, debts,
+      };
+    }
+    function fillForm(p) {
+      document.getElementById('fin_income').value = p.monthly_income || '';
+      document.getElementById('fin_expenses').value = p.monthly_expenses || '';
+      document.getElementById('fin_extra').value = p.extra_debt_payment || '';
+      document.getElementById('fin_assets').innerHTML = '';
+      document.getElementById('fin_debts').innerHTML = '';
+      (p.assets || []).forEach(addAsset);
+      (p.debts || []).forEach(addDebt);
+      if (!(p.assets || []).length) addAsset();
+      if (!(p.debts || []).length) addDebt();
+    }
+    function renderFinance(data) {
+      document.getElementById('fin_out').style.display = 'block';
+      document.getElementById('fin_networth').textContent = money(data.net_worth.net_worth);
+      document.getElementById('fin_score').textContent = data.health.score + ' (' + data.health.grade + ')';
+      document.getElementById('fin_surplus').textContent = money(data.health.metrics.monthly_surplus) + '/mo';
+      const a = data.debt_plan.avalanche, s = data.debt_plan.snowball;
+      document.getElementById('fin_debtplan').innerHTML =
+        `<ul>` +
+        `<li><strong>Avalanche</strong> (highest APR first): paid off in ${a.duration}, ` +
+          `interest ${money(a.total_interest)} <span class="muted">order: ${a.order.join(' → ')}</span></li>` +
+        `<li><strong>Snowball</strong> (smallest balance first): paid off in ${s.duration}, ` +
+          `interest ${money(s.total_interest)}</li>` +
+        `<li class="muted">Recommended: <strong>${data.debt_plan.recommended}</strong> — ` +
+          `saves ${money(Math.abs(data.debt_plan.interest_saved_with_avalanche))} in interest</li>` +
+        `</ul>`;
+      document.getElementById('fin_recs').innerHTML = data.health.recommendations
+        .map(r => `<li><strong>[${r.priority}]</strong> ${r.text}</li>`).join('');
+      document.getElementById('fin_history').innerHTML = (data.history || [])
+        .slice(-8).reverse().map(h => `<li>${h.date} <span class="muted">${money(h.value)}</span></li>`).join('')
+        || '<li class="muted">No snapshots yet.</li>';
+    }
+    async function saveFinance() {
+      const res = await fetch('/api/finance', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(collectProfile()),
+      });
+      renderFinance(await res.json());
+    }
+    async function loadSample() {
+      const res = await fetch('/api/finance/sample', {method: 'POST'});
+      const data = await res.json();
+      fillForm(data.profile); renderFinance(data);
+    }
+    async function loadFinance() {
+      const res = await fetch('/api/finance');
+      const data = await res.json();
+      fillForm(data.profile);
+      if ((data.profile.assets || []).length || (data.profile.debts || []).length) renderFinance(data);
+    }
+    loadFinance();
   </script>
 </body>
 </html>

@@ -65,6 +65,21 @@ Each issue now has a runnable starter module with a clear extension seam
 `gary/pipeline.py` chains all of them into one `run_daily()` flow:
 trend → transcript → long+short video plans → thumbnail → publish → track.
 
+## Personal finance (dashboard)
+
+The dashboard includes a "My finances" tool (`gary/finance/`) where you enter or
+import your accounts and it:
+
+- tracks net worth (assets − debts) with a saved history of snapshots,
+- builds debt-payoff plans and compares avalanche (highest APR first) vs snowball
+  (smallest balance first), showing payoff time and total interest,
+- computes a financial-health score with prioritized recommendations.
+
+Data is entered by the user and persisted locally to `finance_data/profile.json`
+(configurable via `GARY_FINANCE_FILE`); there is no bank access. Automatic account
+aggregation (e.g. Plaid) is a future integration that would populate the same
+`Profile` model. Endpoints: `GET/POST /api/finance`, `POST /api/finance/sample`.
+
 ## Development
 
 Requires Python 3.10+.
