@@ -2,8 +2,13 @@
 
 Each video-plan segment becomes a scene: a titled backdrop, a finance prop that
 matches the beat, an animated stick figure gesturing, and a wrapped caption of
-the narration. Frames are drawn with Pillow and encoded to H.264 via the system
-``ffmpeg`` binary.
+the narration.
+
+Performance: the static part of each beat (background, header, prop, caption) is
+drawn once and reused; only the stick figure is redrawn per frame. Frames are
+streamed as raw RGB straight into ``ffmpeg`` over a pipe (no per-frame PNG files
+on disk), and narration TTS is synthesized in parallel. This makes rendering
+several times faster than the naive per-frame-PNG approach.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -66,18 +72,21 @@ def _draw_prop(draw: ImageDraw.ImageDraw, prop: str, w: int, h: int) -> None:
         draw_arrow(draw, px, py, up=False, scale=1.3)
 
 
-def _render_frame(
+def _render_scene_base(
     heading: str,
     caption: str,
-    gesture: str,
     prop: str,
-    phase: float,
     width: int,
     height: int,
     title_font: ImageFont.ImageFont,
     body_font: ImageFont.ImageFont,
     head_font: ImageFont.ImageFont,
 ) -> Image.Image:
+    """Draw everything that is static for a beat (no stick figure).
+
+    The figure is the only per-frame element, so we render this once per beat and
+    just paste a copy + the figure for each frame (big speedup).
+    """
     img = Image.new("RGB", (width, height), BG_TOP)
     draw = ImageDraw.Draw(img)
 
@@ -91,10 +100,8 @@ def _render_frame(
     ground = int(height * 0.78)
     draw.line([(20, ground), (width - 20, ground)], fill=(31, 42, 55), width=3)
 
-    # Prop + animated stick figure
+    # Prop
     _draw_prop(draw, prop, width, height)
-    pose = GESTURES.get(gesture, GESTURES["idle"])(phase)
-    draw_stick_figure(draw, width * 0.32, ground, scale=1.9, pose=pose)
 
     # Caption box
     box_top = ground + 12
@@ -104,6 +111,21 @@ def _render_frame(
     for line in lines:
         draw.text((50, ty), line, font=body_font, fill=WHITE)
         ty += 30
+    return img
+
+
+def _render_title_base(
+    topic: str,
+    width: int,
+    height: int,
+    title_font: ImageFont.ImageFont,
+    big_font: ImageFont.ImageFont,
+) -> Image.Image:
+    img = Image.new("RGB", (width, height), BG_TOP)
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([0, 0, 12, height], fill=ACCENT)
+    draw.text((60, height * 0.30), "STICKFIGURE FINANCE", font=big_font, fill=ACCENT)
+    draw.text((60, height * 0.30 + 70), topic, font=title_font, fill=WHITE)
     return img
 
 
@@ -175,70 +197,93 @@ def render_story(
         gesture, prop = _SCENE_STYLE.get(seg["heading"], ("idle", "coin"))
         scenes.append((seg["heading"], seg["script"], gesture, prop, seg["script"]))
 
+    # Flatten scenes into sentence "beats" (captions reveal subtitle-style).
+    beats: list[dict[str, Any]] = []
+    for sid, (heading, caption, gesture, prop, narration) in enumerate(scenes):
+        subs = [(caption, narration)] if heading == "__title__" \
+            else [(s, s) for s in _split_sentences(narration)]
+        for cap_text, narr_text in subs:
+            beats.append({
+                "sid": sid, "heading": heading, "caption": cap_text,
+                "narration": narr_text, "gesture": gesture, "prop": prop,
+            })
+
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
-        idx = 0
-        audio_i = 0
-        scene_audios: list[Path] = []
 
-        for si, (heading, caption, gesture, prop, narration) in enumerate(scenes):
-            # Split each scene into sentence "beats" so captions reveal in sync
-            # with the voiceover (like subtitles).
-            if heading == "__title__":
-                beats = [(caption, narration)]  # caption == topic (title layout)
-            else:
-                beats = [(s, s) for s in _split_sentences(narration)]
+        # 1) Synthesize all narration in parallel (network-bound) up front.
+        mp3s: list[str | None] = [None] * len(beats)
+        if voiceover:
+            def _synth(i: int) -> tuple[int, str | None]:
+                p = tmp / f"narr_{i:04d}.mp3"
+                return i, (str(p) if synthesize(beats[i]["narration"], str(p)) else None)
 
-            # Synthesize + measure each beat first to compute scene-total frames
-            # (so the gesture animation phase runs smoothly across the scene).
-            beat_info: list[tuple[str, str | None, int]] = []
-            for bi, (cap_text, narr_text) in enumerate(beats):
-                mp3: str | None = None
-                default = seconds_per_scene if heading == "__title__" else 2.6
-                duration = default
-                if voiceover:
-                    p = tmp / f"narr_{si:03d}_{bi:02d}.mp3"
-                    if synthesize(narr_text, str(p)):
-                        mp3 = str(p)
-                        dur = _audio_duration(mp3)
-                        if dur:
-                            duration = min(max_scene_seconds, max(1.3, dur + 0.35))
-                beat_info.append((cap_text, mp3, max(1, round(fps * duration))))
+            with ThreadPoolExecutor(max_workers=4) as ex:
+                for i, res in ex.map(_synth, range(len(beats))):
+                    mp3s[i] = res
 
-            scene_total = sum(fr for _, _, fr in beat_info)
-            scene_local = 0
-            for cap_text, mp3, frames in beat_info:
-                for _ in range(frames):
-                    phase = scene_local / max(1, scene_total)
-                    if heading == "__title__":
-                        img = Image.new("RGB", (width, height), BG_TOP)
-                        draw = ImageDraw.Draw(img)
-                        draw.rectangle([0, 0, 12, height], fill=ACCENT)
-                        draw.text((60, height * 0.30), "STICKFIGURE FINANCE",
-                                  font=big_font, fill=ACCENT)
-                        draw.text((60, height * 0.30 + 70), topic, font=title_font, fill=WHITE)
-                        draw_stick_figure(draw, width * 0.5, int(height * 0.86), scale=2.0,
-                                          pose=GESTURES["wave"](phase))
-                    else:
-                        img = _render_frame(heading, cap_text, gesture, prop, phase,
-                                            width, height, title_font, body_font, head_font)
-                    img.save(tmp / f"frame_{idx:05d}.png")
-                    idx += 1
-                    scene_local += 1
+        # 2) Frame counts per beat + per-scene totals (for smooth gesture phase).
+        frames_per_beat: list[int] = []
+        for i, b in enumerate(beats):
+            default = seconds_per_scene if b["heading"] == "__title__" else 2.6
+            duration = default
+            if mp3s[i]:
+                dur = _audio_duration(mp3s[i])
+                if dur:
+                    duration = min(max_scene_seconds, max(1.3, dur + 0.35))
+            frames_per_beat.append(max(1, round(fps * duration)))
 
-                scene_audios.append(_scene_audio(tmp, audio_i, mp3, frames / fps))
-                audio_i += 1
+        scene_total: dict[int, int] = {}
+        for b, fr in zip(beats, frames_per_beat, strict=True):
+            scene_total[b["sid"]] = scene_total.get(b["sid"], 0) + fr
 
+        # 3) Stream raw frames straight into ffmpeg (no PNG files on disk). Only
+        #    the stick figure is redrawn per frame; the rest is a cached base.
         silent = tmp / "silent.mp4"
-        subprocess.run(
-            ["ffmpeg", "-y", "-framerate", str(fps),
-             "-i", str(tmp / "frame_%05d.png"),
+        ff_log = open(tmp / "ffmpeg.log", "wb")
+        ff = subprocess.Popen(
+            ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "rgb24",
+             "-s", f"{width}x{height}", "-r", str(fps), "-i", "-",
              "-c:v", "libx264", "-pix_fmt", "yuv420p",
              "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", str(silent)],
-            check=True, capture_output=True,
+            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=ff_log,
         )
 
-        # Concatenate per-scene audio and mux with the video.
+        scene_local: dict[int, int] = {}
+        scene_audios: list[Path] = []
+        try:
+            for i, b in enumerate(beats):
+                sid = b["sid"]
+                if b["heading"] == "__title__":
+                    base = _render_title_base(topic, width, height, title_font, big_font)
+                    fig_x, fig_y, fig_scale = width * 0.5, int(height * 0.86), 2.0
+                else:
+                    base = _render_scene_base(b["heading"], b["caption"], b["prop"],
+                                              width, height, title_font, body_font, head_font)
+                    fig_x, fig_y, fig_scale = width * 0.32, int(height * 0.78), 1.9
+
+                gesture_fn = GESTURES.get(b["gesture"], GESTURES["idle"])
+                total = max(1, scene_total[sid])
+                for _ in range(frames_per_beat[i]):
+                    phase = scene_local.get(sid, 0) / total
+                    frame = base.copy()
+                    draw_stick_figure(ImageDraw.Draw(frame), fig_x, fig_y,
+                                      scale=fig_scale, pose=gesture_fn(phase))
+                    ff.stdin.write(frame.tobytes())
+                    scene_local[sid] = scene_local.get(sid, 0) + 1
+
+                scene_audios.append(_scene_audio(tmp, i, mp3s[i], frames_per_beat[i] / fps))
+        finally:
+            ff.stdin.close()
+            ret = ff.wait()
+            ff_log.close()
+        if ret != 0:
+            raise RuntimeError(
+                "ffmpeg encode failed: "
+                + (tmp / "ffmpeg.log").read_text(errors="ignore")[-500:]
+            )
+
+        # 4) Concatenate per-beat audio and mux with the video.
         listfile = tmp / "audio_list.txt"
         listfile.write_text("".join(f"file '{p}'\n" for p in scene_audios), encoding="utf-8")
         full_audio = tmp / "full.wav"
