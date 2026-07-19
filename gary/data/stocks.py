@@ -5,6 +5,8 @@ No API key required. We poll a small watchlist and rank by absolute daily move.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from gary.agents.trends_agent import Trend
 from gary.data import http
 
@@ -37,10 +39,17 @@ def _quote(symbol: str) -> tuple[float, float] | None:
 
 
 def fetch_stock_trends(limit: int = 5) -> list[Trend] | None:
-    """Watchlist quotes ranked by absolute daily move. None on failure."""
+    """Watchlist quotes ranked by absolute daily move. None on failure.
+
+    Quotes are fetched concurrently (I/O-bound network calls) to keep the
+    dashboard's cold load fast.
+    """
+    symbols = list(_WATCHLIST.items())
+    with ThreadPoolExecutor(max_workers=len(symbols)) as ex:
+        quotes = list(ex.map(lambda sn: (sn[0], sn[1], _quote(sn[0])), symbols))
+
     trends: list[Trend] = []
-    for symbol, name in _WATCHLIST.items():
-        quote = _quote(symbol)
+    for symbol, name, quote in quotes:
         if quote is None:
             continue
         price, change = quote
