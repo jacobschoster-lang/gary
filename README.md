@@ -137,6 +137,34 @@ bash scripts/install-mac-service.sh
 Optional system tools for full features: `brew install ffmpeg tesseract` (video
 rendering + statement OCR).
 
+### Live dashboard (public URL)
+
+Deploy to **[Render](https://render.com)** for a permanent URL you can open from
+any device (Mac, phone, etc.) — no VM or tunnel required.
+
+1. Push this repo to GitHub (already at `github.com/jacobschoster-lang/gary`)
+2. Go to [Render Dashboard → New → Blueprint](https://dashboard.render.com/blueprints)
+3. Connect the `gary` repo — Render reads `render.yaml` automatically
+4. Click **Apply** — you'll get a URL like `https://gary-dashboard.onrender.com`
+
+Or use the one-click deploy button after merging (add to README):
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/jacobschoster-lang/gary)
+
+Optional env vars in the Render dashboard (Settings → Environment):
+`OPENAI_API_KEY`, `YOUTUBE_API_KEY`, `PLAID_CLIENT_ID`/`PLAID_SECRET`,
+`RENTCAST_API_KEY`, YouTube OAuth vars for uploads.
+
+**Docker (any host):**
+
+```bash
+docker build -t gary .
+docker run -p 8000:8000 -v gary-data:/data gary
+# open http://localhost:8000
+```
+
+Production entrypoint: `bash scripts/start-prod.sh` (reads `$PORT`, defaults to 8000).
+
 ### Linux / cloud VM
 
 ```bash
