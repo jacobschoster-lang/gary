@@ -9,6 +9,12 @@ logic, so everything runs and tests without any API keys or external services.
 The update script provisions `.venv/` and installs `requirements.txt`. Use that
 interpreter directly (`.venv/bin/...`); the venv is not auto-activated.
 
+Cloud agent install is defined in `.cursor/environment.json` and runs
+`bash scripts/install.sh` (creates `.venv/`, installs deps). Run the same script
+locally if needed. **Do not** put natural-language prompts in the Cursor
+dashboard install field — it must be valid shell; repo `environment.json` takes
+precedence when present.
+
 Standard commands (see `README.md` for details):
 - Run dev server: `.venv/bin/uvicorn gary.app:app --reload --host 0.0.0.0 --port 8000`
 - Lint: `.venv/bin/ruff check .`
