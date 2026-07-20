@@ -1,0 +1,4 @@
+{
+  "name": "gary",
+  "install": "bash scripts/install.sh"
+}
