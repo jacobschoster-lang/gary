@@ -1,0 +1,31 @@
+# Render blueprint: https://render.com/docs/blueprint-spec
+# Free tier: dashboard is live at a public URL; data resets on redeploy.
+# Upgrade to a paid plan + disk mount for persistent finance_data.
+services:
+  - type: web
+    name: gary-dashboard
+    runtime: docker
+    plan: free
+    region: ohio
+    branch: main
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: YOUTUBE_CLIENT_ID
+        sync: false
+      - key: YOUTUBE_CLIENT_SECRET
+        sync: false
+      - key: YOUTUBE_REFRESH_TOKEN
+        sync: false
+      - key: PLAID_CLIENT_ID
+        sync: false
+      - key: PLAID_SECRET
+        sync: false
+      - key: RENTCAST_API_KEY
+        sync: false

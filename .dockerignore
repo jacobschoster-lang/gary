@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+out/
+finance_data/
+.git/
+.cursor/
+*.mp4
+*.log
