@@ -7,6 +7,6 @@ offline.
 
 from gary.data.crypto import fetch_crypto_trends
 from gary.data.news import fetch_headlines
-from gary.data.stocks import fetch_stock_trends
+from gary.data.stocks import fetch_quantum_trends, fetch_stock_trends
 
-__all__ = ["fetch_crypto_trends", "fetch_stock_trends", "fetch_headlines"]
+__all__ = ["fetch_crypto_trends", "fetch_stock_trends", "fetch_quantum_trends", "fetch_headlines"]

@@ -217,7 +217,7 @@ Run/inspect manually:
 
 - `GET /` — dashboard
 - `GET /api/health` — health check
-- `GET /api/trends?market=stocks|crypto&limit=N` — trending assets
+- `GET /api/trends?market=stocks|crypto|quantum&limit=N` — trending assets
 - `GET /api/youtube-trends?limit=N` — trending YouTube finance topics
 - `POST /api/transcript` — body `{"topic": "...", "data_points": [...]}` → transcript
 - `GET /api/transcripts` — recently generated transcripts

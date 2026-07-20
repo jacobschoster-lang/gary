@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-Market = Literal["stocks", "crypto"]
+Market = Literal["stocks", "crypto", "quantum"]
 
 
 @dataclass
@@ -45,7 +45,7 @@ class TrendsAgent:
     use_live: bool = True
 
     def top(self, market: Market, limit: int = 5) -> list[Trend]:
-        if market not in ("stocks", "crypto"):
+        if market not in ("stocks", "crypto", "quantum"):
             raise ValueError(f"unknown market: {market!r}")
         if limit < 1:
             raise ValueError("limit must be >= 1")
@@ -63,13 +63,23 @@ class TrendsAgent:
 
     def _fetch_live(self, market: Market) -> list[Trend] | None:
         # Lazy import avoids a circular import (gary.data imports Trend).
-        from gary.data import fetch_crypto_trends, fetch_stock_trends
+        from gary.data import fetch_crypto_trends, fetch_quantum_trends, fetch_stock_trends
 
         if market == "stocks":
             return fetch_stock_trends(limit=8)
+        if market == "quantum":
+            return fetch_quantum_trends(limit=8)
         return fetch_crypto_trends(limit=8)
 
     def _fetch_stub(self, market: Market) -> list[Trend]:
+        if market == "quantum":
+            return [
+                Trend("IONQ", "IonQ", "quantum", 88.5, "Trapped-ion leader"),
+                Trend("RGTI", "Rigetti Computing", "quantum", 84.2, "Superconducting qubits"),
+                Trend("QBTS", "D-Wave Quantum", "quantum", 79.8, "Quantum annealing"),
+                Trend("QUBT", "Quantum Computing Inc", "quantum", 72.1, "Photonic systems"),
+                Trend("IBM", "IBM", "quantum", 68.4, "Enterprise quantum cloud"),
+            ]
         if market == "stocks":
             return [
                 Trend("NVDA", "NVIDIA", "stocks", 94.2, "AI demand momentum"),

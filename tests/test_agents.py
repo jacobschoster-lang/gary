@@ -33,6 +33,13 @@ def test_trends_ranked_and_limited():
     assert scores == sorted(scores, reverse=True)
 
 
+def test_quantum_trends_market():
+    agent = TrendsAgent()
+    top = agent.top("quantum", limit=3)
+    assert len(top) == 3
+    assert all(t.market == "quantum" for t in top)
+
+
 def test_trends_rejects_unknown_market():
     agent = TrendsAgent()
     with pytest.raises(ValueError):

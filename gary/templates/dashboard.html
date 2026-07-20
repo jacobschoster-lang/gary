@@ -207,6 +207,7 @@
             <select id="pipeline_market">
               <option value="crypto">Crypto</option>
               <option value="stocks">Stocks</option>
+              <option value="quantum">Quantum</option>
             </select>
           </div>
           <label class="row" style="align-items:center;gap:8px;margin:0;">
@@ -219,6 +220,7 @@
           <button id="btn_pipeline" type="button" class="btn-green">Run daily pipeline</button>
           <button id="btn_preview" type="button" class="btn-purple">Preview stick-figure video</button>
           <button type="button" class="btn-slate" onclick="useTopTrend('crypto')">Use top crypto trend</button>
+          <button type="button" class="btn-slate" onclick="useTopTrend('quantum')">Use top quantum trend</button>
           <button type="button" class="btn-slate" onclick="useTopTrend('stocks')">Use top stock trend</button>
         </div>
 
@@ -246,9 +248,10 @@
         <div class="card">
           <h2>Trending now</h2>
           <p class="muted" style="margin-top:0;">Click a topic to use it above.</p>
-          <div class="grid2">
+          <div class="grid3">
             <div><div class="tag">Stocks</div><ul id="stocks"></ul></div>
             <div><div class="tag">Crypto</div><ul id="crypto"></ul></div>
+            <div><div class="tag">Quantum</div><ul id="quantum"></ul></div>
           </div>
           <div class="tag" style="margin-top:14px;">YouTube topics</div>
           <ul id="youtube"></ul>
@@ -262,6 +265,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=3"></script>
+  <script src="/static/dashboard.js?v=4"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@ const money = n => '$' + Number(n || 0).toLocaleString(undefined, {maximumFracti
 const GRID = 'rgba(255,255,255,0.06)';
 const PALETTE = ['#3b82f6','#22c55e','#facc15','#f87171','#8b5cf6','#0ea5e9','#fb923c','#14b8a6','#ec4899'];
 window._charts = window._charts || {};
-const _tabLoaded = { property: false, finances: false };
+const _tabLoaded = { property: false, finances: false, content: false };
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -43,6 +43,10 @@ function showTab(name) {
   if (name === 'finances' && !_tabLoaded.finances) {
     _tabLoaded.finances = true;
     plaidStatus();
+  }
+  if (name === 'content' && !_tabLoaded.content) {
+    _tabLoaded.content = true;
+    loadContentTrends();
   }
   location.hash = name;
 }
@@ -667,19 +671,23 @@ document.getElementById('btn_sample')?.addEventListener('click', () =>
 document.getElementById('btn_search_re')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_search_re'), searchRealEstate));
 
+async function loadContentTrends() {
+  await Promise.all([
+    loadTrends('stocks', 'stocks'),
+    loadTrends('crypto', 'crypto'),
+    loadTrends('quantum', 'quantum'),
+    loadYouTube(),
+    loadVideos(),
+    loadTranscripts(),
+    loadContentStatus(),
+  ]);
+}
+
 // ---------- init ----------
 async function initDashboard() {
   loadReFilters();
   const tab = (location.hash || '#overview').replace('#', '') || 'overview';
-  await Promise.all([
-    loadTrends('stocks', 'stocks'),
-    loadTrends('crypto', 'crypto'),
-    loadYouTube(),
-    loadVideos(),
-    loadTranscripts(),
-    loadFinance(),
-    loadContentStatus(),
-  ]);
+  await loadFinance();
   if (tab === 'property') {
     _tabLoaded.property = true;
     searchRealEstate();
@@ -687,6 +695,10 @@ async function initDashboard() {
   if (tab === 'finances') {
     _tabLoaded.finances = true;
     plaidStatus();
+  }
+  if (tab === 'content') {
+    _tabLoaded.content = true;
+    loadContentTrends();
   }
 }
 initDashboard();
