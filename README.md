@@ -170,6 +170,9 @@ Required GitHub repo **secrets** (Settings → Secrets and variables → Actions
 - `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` — OAuth client (Desktop app)
 - `YOUTUBE_REFRESH_TOKEN` — minted once with `scripts/youtube_authorize.py`
   using the Google account that owns the channel
+- `YOUTUBE_API_KEY` — optional; enables live YouTube trends + real view counts
+  in the dashboard (free Google Cloud API key)
+- `OPENAI_API_KEY` — optional; upgrades transcript copy and comment replies
 
 Optional repo **variables**:
 - `YOUTUBE_PRIVACY` — `private` (default) | `unlisted` | `public`
@@ -200,7 +203,8 @@ workflow installs ffmpeg; it's also pre-installed on the dev VM). Preview one:
 ```
 
 Or in the dashboard, click **Preview stick-figure video** (`GET /api/story.mp4?topic=...`).
-Currently the video has no voiceover; TTS narration is the next enhancement.
+Voiceover is available via `?voice=true` (gTTS; needs network). The daily job
+renders long + short MP4s and a PNG thumbnail automatically.
 
 Run/inspect manually:
 

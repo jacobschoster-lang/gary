@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
+
+from PIL import Image, ImageDraw, ImageFont
 
 _PALETTES = [
     ("#0b1e3f", "#ffcc00"),
@@ -72,6 +75,26 @@ class ThumbnailAgent:
             "</svg>",
         ]
         return "\n".join(parts)
+
+    def render_png(self, spec: ThumbnailSpec, width: int = 1280, height: int = 720) -> Image.Image:
+        img = Image.new("RGB", (width, height), spec.bg_color)
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((0, 0, 18, height), fill=spec.accent_color)
+        draw.rounded_rectangle((60, 80, 320, 150), radius=10, fill=spec.accent_color)
+        font = ImageFont.load_default()
+        draw.text((190, 105), spec.badge, fill=spec.bg_color, anchor="mm", font=font)
+        y = 250
+        for line in spec.headline.split():
+            draw.text((60, y), line, fill="#ffffff", font=font)
+            y += 70
+        draw.text((60, height - 60), "Stickfigure Finance", fill=spec.accent_color, font=font)
+        return img
+
+    def save_png(self, spec: ThumbnailSpec, path: str | Path) -> str:
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        self.render_png(spec).save(out, format="PNG")
+        return str(out)
 
 
 def _wrap(text: str, per_line: int = 14) -> str:

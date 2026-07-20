@@ -1,17 +1,20 @@
 """Publisher agent (issue #6).
 
-Handles the post-production side: "uploading" a video, drafting responses to top
-comments, and tracking per-video performance. State is kept in-memory and the
-metrics are deterministic pseudo-values so the platform runs offline. Replace
-``upload``/``track`` internals with the real YouTube Data API.
+Handles the post-production side: uploading videos, drafting comment replies,
+and tracking per-video performance. Uses the YouTube Data API when
+``YOUTUBE_API_KEY`` is set; otherwise metrics are deterministic samples.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+from gary.agents import llm
+from gary.integrations.youtube_data import fetch_video_statistics
 
 
 @dataclass
@@ -47,6 +50,18 @@ class Publisher:
         self._videos[video_id] = video
         return video
 
+    def register(self, video_id: str, title: str, kind: str, url: str) -> PublishedVideo:
+        """Register a real uploaded video (e.g. from YouTube OAuth upload)."""
+        video = PublishedVideo(
+            video_id=video_id,
+            title=title,
+            kind=kind,
+            url=url,
+            published_at=datetime.now(timezone.utc).isoformat(),
+        )
+        self._videos[video_id] = video
+        return video
+
     def videos(self) -> list[PublishedVideo]:
         return list(self._videos.values())
 
@@ -63,7 +78,11 @@ class Publisher:
     def track(self, video_id: str) -> dict[str, Any]:
         if video_id not in self._videos:
             raise KeyError(f"unknown video_id: {video_id}")
-        # NOTE: replace with real analytics from the YouTube Data API.
+
+        live = fetch_video_statistics(video_id)
+        if live is not None:
+            return live
+
         digest = hashlib.sha256(video_id.encode("utf-8")).digest()
         views = 1000 + digest[0] * 137
         likes = int(views * (0.03 + digest[1] / 5000))
@@ -75,10 +94,13 @@ class Publisher:
             "likes": likes,
             "comments": comments,
             "ctr_percent": ctr,
+            "source": "sample",
         }
 
     def _draft_reply(self, comment: str) -> str:
-        # NOTE: replace with a real LLM-based responder.
+        reply = llm.draft_comment_reply(comment, env=dict(os.environ))
+        if reply:
+            return reply
         return (
             "Great point — thanks for watching! We'll dig into that in an "
             "upcoming video. Not financial advice."

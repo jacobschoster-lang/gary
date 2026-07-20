@@ -2,10 +2,9 @@
 
 Surfaces trending stocks, crypto assets, and YouTube topics that feed the
 transcript and video pipelines. When ``use_live`` is set (default) it pulls real
-data from free public APIs (Yahoo Finance for stocks, CoinGecko for crypto) and
-falls back to a deterministic sample set if the network/API is unavailable, so
-the platform is always runnable offline. YouTube topics remain a stub until a
-YouTube Data API key is wired in.
+data from free public APIs (Yahoo Finance, CoinGecko, YouTube Data API when
+``YOUTUBE_API_KEY`` is set) and falls back to a deterministic sample set if the
+network/API is unavailable.
 """
 
 from __future__ import annotations
@@ -96,7 +95,20 @@ class TrendsAgent:
         return topics[:limit]
 
     def _fetch_youtube(self) -> list[YouTubeTopic]:
-        # NOTE: replace with real YouTube Data API / scraping.
+        from gary.integrations.youtube_data import fetch_finance_topics
+
+        if self.use_live:
+            rows = fetch_finance_topics(limit=8)
+            if rows:
+                return [
+                    YouTubeTopic(
+                        title=row["title"],
+                        channel=row["channel"],
+                        views=int(row.get("views") or 0),
+                        velocity=float(row.get("velocity") or 0.0),
+                    )
+                    for row in rows
+                ]
         return [
             YouTubeTopic("Why the Fed pivot changes everything", "MacroDaily", 412_000, 9800.0),
             YouTubeTopic("Bitcoin to $100k? The real math", "CryptoEdge", 980_000, 15200.0),

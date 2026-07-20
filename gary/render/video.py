@@ -168,6 +168,7 @@ def render_story(
     seconds_per_scene: float = 4.0,
     voiceover: bool = True,
     max_scene_seconds: float = 18.0,
+    video_key: str = "video_long",
 ) -> str:
     """Render ``plan`` (a pipeline result) to an MP4 at ``out_path``.
 
@@ -188,12 +189,18 @@ def render_story(
     out_path = str(out_path)
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
 
+    video_plan = plan.get(video_key) or plan["video_long"]
+    title_narration = (
+        f"Welcome to Stickfigure Finance. Today, {topic}."
+        if video_key == "video_long"
+        else f"Quick take: {topic}."
+    )
+
     # Each scene = (heading, caption, gesture, prop, narration_text)
     scenes: list[tuple[str, str, str, str, str]] = [
-        ("__title__", topic, "wave", "coin",
-         f"Welcome to Stickfigure Finance. Today, {topic}."),
+        ("__title__", topic, "wave", "coin", title_narration),
     ]
-    for seg in plan["video_long"]["segments"]:
+    for seg in video_plan["segments"]:
         gesture, prop = _SCENE_STYLE.get(seg["heading"], ("idle", "coin"))
         scenes.append((seg["heading"], seg["script"], gesture, prop, seg["script"]))
 

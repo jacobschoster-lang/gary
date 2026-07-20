@@ -110,3 +110,22 @@ def _parse_sections(content: str) -> list[dict[str, str]] | None:
     if [s["heading"] for s in cleaned] != REQUIRED_HEADINGS:
         return None
     return cleaned
+
+
+def draft_comment_reply(comment: str, env: dict[str, str] | None = None) -> str | None:
+    """Draft a short YouTube comment reply via LLM, or None if unavailable."""
+    env = env if env is not None else dict(os.environ)
+    if not env.get("OPENAI_API_KEY"):
+        return None
+
+    system = (
+        "You are the host of Stickfigure Finance on YouTube. Reply warmly and "
+        "concisely (1-2 sentences). Never give financial advice; thank viewers."
+    )
+    user = f"Viewer comment:\n{comment.strip()}\n\nWrite a friendly reply."
+    content = _chat_completion(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        env,
+    )
+    reply = (content or "").strip()
+    return reply or None

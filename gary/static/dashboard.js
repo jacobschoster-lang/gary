@@ -96,11 +96,12 @@ async function generate() {
 
 async function runPipeline() {
   const topic = document.getElementById('topic').value.trim();
+  const market = document.getElementById('pipeline_market').value;
   showAlert('content_alert', '');
   try {
     const data = await apiFetch('/api/pipeline/run', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(topic ? { topic } : {})
+      body: JSON.stringify(topic ? { topic, market } : { market })
     });
     renderPipelineResult(data);
     loadVideos();
@@ -110,10 +111,21 @@ async function runPipeline() {
 
 function previewVideo() {
   const topic = document.getElementById('topic').value.trim() || 'Bitcoin ETF inflows';
+  const voice = document.getElementById('preview_voice').checked;
   const v = document.getElementById('preview');
+  const status = document.getElementById('preview_status');
   v.style.display = 'block';
-  v.src = '/api/story.mp4?topic=' + encodeURIComponent(topic) + '&t=' + Date.now();
-  v.load(); v.play().catch(() => {});
+  status.style.display = 'block';
+  v.removeAttribute('src');
+  const url = '/api/story.mp4?topic=' + encodeURIComponent(topic) + '&voice=' + (voice ? 'true' : 'false');
+  v.oncanplay = () => { status.style.display = 'none'; };
+  v.onerror = () => {
+    status.textContent = 'Preview failed — is ffmpeg installed?';
+    status.style.display = 'block';
+  };
+  v.src = url;
+  v.load();
+  v.play().catch(() => {});
 }
 
 function renderTranscriptResult(data) {
@@ -132,17 +144,23 @@ function renderPipelineResult(data) {
   document.getElementById('result_title').textContent = data.transcript.title;
   document.getElementById('result_thumb').src = '/api/thumbnail.svg?topic=' + encodeURIComponent(data.topic) + '&t=' + Date.now();
   const m = data.metrics;
+  const sample = m.source === 'sample';
+  const sections = (data.transcript.sections || [])
+    .map(s => `<p><strong>${esc(s.heading)}</strong><br>${esc(s.script)}</p>`).join('');
   document.getElementById('result_body').innerHTML =
     `<p class="muted">Topic: ${esc(data.topic)}</p>` +
     `<p>Long: ${data.video_long.total_seconds}s · ${data.video_long.segments.length} segments<br>` +
-    `Short: ${data.video_short.total_seconds}s<br>` +
+    `Short: ${data.video_short.total_seconds}s · ${data.video_short.segments.length} segments<br>` +
     `Thumbnail: ${esc(data.thumbnail.badge)} / ${esc(data.thumbnail.headline)}</p>` +
-    `<p><a href="${escAttr(safeUrl(data.published.url))}" target="_blank" rel="noopener">Published → ${esc(data.published.url)}</a></p>`;
+    `<p><a href="${escAttr(safeUrl(data.published.url))}" target="_blank" rel="noopener">Published → ${esc(data.published.url)}</a></p>` +
+    `<div style="margin-top:12px;">${sections}</div>`;
+  const ctr = m.ctr_percent != null ? `${m.ctr_percent}%` : '—';
   document.getElementById('result_metrics').innerHTML =
+    (sample ? '<span class="badge badge-warn">sample metrics</span> ' : '<span class="badge badge-ok">live metrics</span> ') +
     `<div class="metric"><div class="k">Views</div><div class="v">${m.views.toLocaleString()}</div></div>` +
     `<div class="metric"><div class="k">Likes</div><div class="v">${m.likes.toLocaleString()}</div></div>` +
     `<div class="metric"><div class="k">Comments</div><div class="v">${m.comments.toLocaleString()}</div></div>` +
-    `<div class="metric"><div class="k">CTR</div><div class="v">${m.ctr_percent}%</div></div>`;
+    `<div class="metric"><div class="k">CTR</div><div class="v">${ctr}</div></div>`;
 }
 
 async function useTopTrend(market) {
@@ -191,10 +209,13 @@ async function loadVideos() {
       const m = v.metrics;
       const date = (v.published_at || '').slice(0, 10);
       const vid = escAttr(v.video_id);
+      const sample = m.source === 'sample';
       return `<div class="video-card" id="video-${vid}">` +
         `<div class="title"><a href="${escAttr(safeUrl(v.url))}" target="_blank" rel="noopener">${esc(v.title)}</a></div>` +
-        `<span class="muted">${esc(v.kind)} · ${esc(date)}</span> · ` +
-        `${m.views.toLocaleString()} views · ${m.likes} likes · ${m.comments} comments · CTR ${m.ctr_percent}%` +
+        `<span class="muted">${esc(v.kind)} · ${esc(date)}</span>` +
+        (sample ? ' <span class="badge badge-warn">sample metrics</span>' : ' <span class="badge badge-ok">live metrics</span>') +
+        ` · ${m.views.toLocaleString()} views · ${m.likes} likes · ${m.comments} comments` +
+        (m.ctr_percent != null ? ` · CTR ${m.ctr_percent}%` : '') +
         `<div class="row" style="margin-top:8px;">` +
         `<button class="btn-slate" style="font-size:12px;padding:6px 10px;" onclick="toggleComments('${vid}')">Draft replies</button>` +
         `</div>` +
@@ -248,10 +269,17 @@ async function loadTranscripts() {
 async function loadContentStatus() {
   try {
     const s = await apiFetch('/api/content/status');
+    const badges = [
+      `<span class="badge badge-ok">${s.transcripts} transcripts</span>`,
+      `<span class="badge badge-ok">${s.videos} videos</span>`,
+      s.llm_enabled ? '<span class="badge badge-ok">LLM on</span>' : '<span class="badge badge-warn">LLM off</span>',
+      s.plaid_configured ? '<span class="badge badge-ok">Plaid ready</span>' : '<span class="badge badge-warn">Plaid off</span>',
+      s.rentcast_configured ? '<span class="badge badge-ok">RentCast live</span>' : '<span class="badge badge-warn">RentCast sample</span>',
+      s.youtube_upload_configured ? '<span class="badge badge-ok">YouTube upload</span>' : '<span class="badge badge-warn">YouTube upload off</span>',
+      s.youtube_api_configured ? '<span class="badge badge-ok">YouTube API</span>' : '<span class="badge badge-warn">YouTube API off</span>',
+    ];
     document.getElementById('content_status').innerHTML =
-      `<span class="badge badge-ok">${s.transcripts} transcripts</span> ` +
-      `<span class="badge badge-ok">${s.videos} videos</span> ` +
-      (s.llm_enabled ? '<span class="badge badge-ok">LLM on</span>' : '<span class="badge badge-warn">LLM off</span>') +
+      badges.join(' ') +
       `<span class="muted" style="margin-left:8px;">Daily post: ${s.daily_post_schedule}</span>`;
   } catch (_) {}
 }
@@ -626,6 +654,8 @@ async function searchRealEstate() {
 }
 
 // ---------- Wire buttons ----------
+document.getElementById('btn_preview')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_preview'), previewVideo));
 document.getElementById('btn_generate')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_generate'), generate));
 document.getElementById('btn_pipeline')?.addEventListener('click', () =>

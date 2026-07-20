@@ -202,11 +202,28 @@
         <div id="content_alert" class="alert alert-error" style="display:none;"></div>
         <div class="field"><label>Finance topic</label><input id="topic" placeholder="e.g. Bitcoin ETF inflows" /></div>
         <div class="row">
+          <div class="field" style="flex:0 0 160px;margin-bottom:0;">
+            <label>Auto-pick market</label>
+            <select id="pipeline_market">
+              <option value="crypto">Crypto</option>
+              <option value="stocks">Stocks</option>
+            </select>
+          </div>
+          <label class="row" style="align-items:center;gap:8px;margin:0;">
+            <input type="checkbox" id="preview_voice" />
+            <span>Voiceover on preview</span>
+          </label>
+        </div>
+        <div class="row">
           <button id="btn_generate" type="button">Generate transcript</button>
           <button id="btn_pipeline" type="button" class="btn-green">Run daily pipeline</button>
-          <button type="button" class="btn-purple" onclick="previewVideo()">Preview stick-figure video</button>
+          <button id="btn_preview" type="button" class="btn-purple">Preview stick-figure video</button>
           <button type="button" class="btn-slate" onclick="useTopTrend('crypto')">Use top crypto trend</button>
           <button type="button" class="btn-slate" onclick="useTopTrend('stocks')">Use top stock trend</button>
+        </div>
+
+        <div id="preview_status" class="muted" style="display:none;margin-top:10px;">
+          <span class="spinner"></span> Rendering preview… this may take a moment.
         </div>
 
         <div id="content_result" class="card" style="display:none;margin-top:14px;background:var(--panel-2);">
@@ -245,6 +262,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=2"></script>
+  <script src="/static/dashboard.js?v=3"></script>
 </body>
 </html>
