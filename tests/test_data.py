@@ -1,5 +1,5 @@
 from gary.agents import TranscriptAgent, TrendsAgent
-from gary.data import fetch_crypto_trends, fetch_headlines, fetch_stock_trends
+from gary.data import fetch_crypto_trends, fetch_headlines, fetch_quantum_trends, fetch_stock_trends
 
 _CG_MARKETS = [
     {"symbol": "btc", "name": "Bitcoin", "current_price": 64000,
@@ -10,8 +10,14 @@ _CG_MARKETS = [
      "price_change_percentage_24h": -2.0, "total_volume": 1},
 ]
 
-_YF = {"chart": {"result": [{"meta": {"symbol": "NVDA", "regularMarketPrice": 120.0,
-                                      "chartPreviousClose": 100.0}}]}}
+_YF = {
+    "chart": {
+        "result": [{
+            "meta": {"symbol": "NVDA", "regularMarketPrice": 120.0},
+            "indicators": {"quote": [{"close": [100.0, 120.0]}]},
+        }]
+    }
+}
 
 _RSS = (
     "<rss><channel>"
@@ -42,6 +48,13 @@ def test_fetch_stock_trends_parses(monkeypatch):
     assert trends is not None
     assert trends[0].market == "stocks"
     assert "%" in trends[0].note
+
+
+def test_fetch_quantum_trends_parses(monkeypatch):
+    monkeypatch.setattr("gary.data.http.get_json", lambda *a, **k: _YF)
+    trends = fetch_quantum_trends(limit=3)
+    assert trends is not None
+    assert trends[0].market == "quantum"
 
 
 def test_fetch_headlines_parses(monkeypatch):

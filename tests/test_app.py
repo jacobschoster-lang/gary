@@ -41,6 +41,15 @@ def test_youtube_trends_endpoint():
     assert len(res.json()["topics"]) == 3
 
 
+def test_quantum_trends_endpoint():
+    res = client.get("/api/trends?market=quantum&limit=3")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["market"] == "quantum"
+    assert len(body["trends"]) == 3
+    assert all(t["market"] == "quantum" for t in body["trends"])
+
+
 def test_thumbnail_svg_endpoint():
     res = client.get("/api/thumbnail.svg?topic=Bitcoin ETF inflows")
     assert res.status_code == 200

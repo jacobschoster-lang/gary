@@ -74,3 +74,8 @@ def test_pipeline_run_daily_end_to_end():
 def test_pipeline_auto_picks_topic():
     result = ContentPipeline().run_daily(market="crypto")
     assert result["topic"]
+
+
+def test_pipeline_auto_picks_quantum_topic():
+    result = ContentPipeline().run_daily(market="quantum")
+    assert result["topic"]
