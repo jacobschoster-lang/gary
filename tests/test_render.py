@@ -33,6 +33,7 @@ def test_split_sentences():
 
 
 @pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg not installed")
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg not installed")
 def test_render_story_produces_mp4(tmp_path):
     plan = ContentPipeline(use_live=False).run_daily(topic="Bitcoin ETF inflows")
     out = tmp_path / "story.mp4"
@@ -40,3 +41,19 @@ def test_render_story_produces_mp4(tmp_path):
     render_story(plan, out_path=str(out), fps=6, seconds_per_scene=1.0)
     assert out.exists()
     assert out.stat().st_size > 5000  # a real, non-trivial video file
+
+
+@pytest.mark.skipif(ffmpeg_missing, reason="ffmpeg not installed")
+def test_render_story_short_plan(tmp_path):
+    plan = ContentPipeline(use_live=False).run_daily(topic="Bitcoin ETF inflows")
+    out = tmp_path / "short.mp4"
+    render_story(
+        plan,
+        out_path=str(out),
+        video_key="video_short",
+        fps=6,
+        seconds_per_scene=1.0,
+        voiceover=False,
+    )
+    assert out.exists()
+    assert out.stat().st_size > 0

@@ -38,12 +38,21 @@ def test_thumbnail_design_is_deterministic_and_renders_svg():
     assert a.headline in svg or a.headline.split()[0] in svg
 
 
+def test_thumbnail_save_png(tmp_path):
+    agent = ThumbnailAgent()
+    spec = agent.design("Bitcoin ETF inflows")
+    out = agent.save_png(spec, tmp_path / "thumb.png")
+    assert (tmp_path / "thumb.png").exists()
+    assert out.endswith("thumb.png")
+
+
 def test_publisher_upload_track_and_comments():
     pub = Publisher()
     video = pub.upload("My Finance Video", kind="long")
     assert video.url.endswith(video.video_id)
     metrics = pub.track(video.video_id)
     assert metrics["views"] > 0
+    assert metrics["source"] == "sample"
     replies = pub.manage_comments(video.video_id, ["nice video", "thanks!"], top_n=10)
     assert len(replies) == 2
     assert all("reply" in r for r in replies)

@@ -8,7 +8,6 @@ Run in development with:
 from __future__ import annotations
 
 import os
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -38,9 +37,11 @@ from gary.finance import (
     sample_profile,
 )
 from gary.finance.models import Profile
+from gary.integrations.youtube import YouTubeUploader
 from gary.pipeline import ContentPipeline
 from gary.realestate import search_listings
 from gary.render import render_story
+from gary.render.preview_cache import get_or_render
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -153,17 +154,20 @@ def story_video(topic: str, voice: bool = False) -> FileResponse:
     """Render a short animated stick-figure video for a topic (preview).
 
     ``voice=false`` (default) renders a fast silent preview; ``voice=true`` adds
-    gTTS narration (slower, needs internet).
+    gTTS narration (slower, needs internet). Results are cached by topic.
     """
-    plan = pipeline.run_daily(topic=topic)
-    out_path = Path(tempfile.gettempdir()) / f"gary_preview_{'voice' if voice else 'silent'}.mp4"
     try:
-        render_story(
-            plan, out_path=str(out_path), fps=10, seconds_per_scene=2.5, voiceover=voice
+        path = get_or_render(
+            topic,
+            voice,
+            lambda t: pipeline.run_daily(topic=t),
+            render_story,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return FileResponse(str(out_path), media_type="video/mp4", filename="story.mp4")
+    return FileResponse(str(path), media_type="video/mp4", filename="story.mp4")
 
 
 @app.get("/api/videos")
@@ -202,6 +206,8 @@ def content_status() -> dict[str, Any]:
         "llm_enabled": bool(os.environ.get("OPENAI_API_KEY")),
         "plaid_configured": PlaidClient.from_env() is not None,
         "rentcast_configured": bool(os.environ.get("RENTCAST_API_KEY")),
+        "youtube_upload_configured": YouTubeUploader.from_env() is not None,
+        "youtube_api_configured": bool(os.environ.get("YOUTUBE_API_KEY")),
         "daily_post_schedule": "08:00 America/New_York via GitHub Actions",
     }
 

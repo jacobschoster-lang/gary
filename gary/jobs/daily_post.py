@@ -5,9 +5,12 @@ invoked by a scheduler (GitHub Actions) at 08:00 America/New_York.
 
 Behavior:
   * Always runs the pipeline and builds the video metadata (title/description/tags).
-  * If a rendered video file exists (``--video-file`` or ``GARY_VIDEO_FILE``) AND
-    YouTube credentials are configured, it uploads.
-  * Otherwise it performs a safe DRY RUN: writes a manifest JSON and skips upload.
+  * Renders long + short stick-figure MP4s and a PNG thumbnail when no video file
+    is supplied.
+  * If YouTube credentials are configured, uploads the long video (with thumbnail)
+    and the short as a separate upload.
+  * Persists successful uploads to the content store for the dashboard.
+  * Otherwise performs a safe DRY RUN: writes a manifest JSON and skips upload.
 
 CLI:
     python -m gary.jobs.daily_post [--topic "..."] [--video-file path.mp4]
@@ -24,6 +27,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from gary.agents.publisher_agent import PublishedVideo
+from gary.agents.thumbnail_agent import ThumbnailAgent
+from gary.content.store import ContentStore
 from gary.integrations.youtube import YouTubeUploader
 from gary.jobs.schedule import should_run_now
 from gary.pipeline import ContentPipeline
@@ -50,6 +56,52 @@ def build_tags(plan: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(base + topic_words))
 
 
+def _render_assets(plan: dict[str, Any], out_dir: Path) -> dict[str, str]:
+    long_path = out_dir / "story.mp4"
+    short_path = out_dir / "story_short.mp4"
+    thumb_path = out_dir / "thumbnail.png"
+
+    render_story(plan, out_path=str(long_path))
+    render_story(
+        plan,
+        out_path=str(short_path),
+        video_key="video_short",
+        fps=10,
+        seconds_per_scene=2.0,
+        voiceover=False,
+    )
+
+    thumb_agent = ThumbnailAgent()
+    thumb_agent.save_png(thumb_agent.design(plan["topic"]), thumb_path)
+
+    return {
+        "long": str(long_path),
+        "short": str(short_path),
+        "thumbnail": str(thumb_path),
+    }
+
+
+def _persist_upload(
+    store: ContentStore,
+    plan: dict[str, Any],
+    upload: dict[str, Any],
+    *,
+    kind: str,
+    title: str,
+) -> None:
+    video = PublishedVideo(
+        video_id=upload["video_id"],
+        title=title,
+        kind=kind,
+        url=upload["url"],
+        published_at=datetime.now(timezone.utc).isoformat(),
+    )
+    if kind == "long":
+        store.save_pipeline_result(plan["transcript"], video)
+    else:
+        store.add_video(video)
+
+
 def run(
     topic: str | None = None,
     video_file: str | None = None,
@@ -63,6 +115,8 @@ def run(
     title = plan["transcript"]["title"]
     description = build_description(plan)
     tags = build_tags(plan)
+    out = Path(out_dir)
+    store = ContentStore()
 
     result: dict[str, Any] = {
         "channel": CHANNEL_HANDLE,
@@ -81,13 +135,16 @@ def run(
         return result
 
     uploader = YouTubeUploader.from_env()
-
-    # Use a supplied file, otherwise render an animated stick-figure video.
     video_file = video_file or os.environ.get("GARY_VIDEO_FILE")
+    short_file: str | None = None
+
     if not video_file:
         try:
-            video_file = render_story(plan, out_path=str(Path(out_dir) / "story.mp4"))
-            result["video_file"] = video_file
+            assets = _render_assets(plan, out)
+            video_file = assets["long"]
+            short_file = assets["short"]
+            thumbnail = thumbnail or assets["thumbnail"]
+            result.update(video_file=video_file, short_file=short_file, thumbnail=thumbnail)
         except Exception as exc:  # ffmpeg missing, etc.
             result["reason"] = f"video render failed: {exc}"
             _write_manifest(out_dir, plan, result)
@@ -107,6 +164,18 @@ def run(
             thumbnail_path=thumbnail,
         )
         result.update(uploaded=True, dry_run=False, reason=None, **upload)
+        _persist_upload(store, plan, upload, kind="long", title=title)
+
+        if short_file and Path(short_file).exists():
+            short_title = f"{title} #Shorts"[:100]
+            short_upload = uploader.upload(
+                video_path=short_file,
+                title=short_title,
+                description=description,
+                tags=tags + ["shorts"],
+            )
+            result["short_upload"] = short_upload
+            _persist_upload(store, plan, short_upload, kind="short", title=short_title)
 
     _write_manifest(out_dir, plan, result)
     return result
