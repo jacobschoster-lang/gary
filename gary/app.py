@@ -16,6 +16,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.requests import Request
 
 from gary.agents import ThumbnailAgent, TranscriptAgent, TrendsAgent
 from gary.content import ContentStore
@@ -60,6 +61,14 @@ _PLAID_NOT_CONFIGURED = "Plaid not configured (set PLAID_CLIENT_ID/SECRET)"
 _STATIC = Path(__file__).parent / "static"
 if _STATIC.is_dir():
     app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+
+@app.middleware("http")
+async def cache_static_assets(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers.setdefault("Cache-Control", "public, max-age=3600")
+    return response
 
 
 def _save_transcript(record: dict[str, Any]) -> None:

@@ -2,6 +2,7 @@ const money = n => '$' + Number(n || 0).toLocaleString(undefined, {maximumFracti
 const GRID = 'rgba(255,255,255,0.06)';
 const PALETTE = ['#3b82f6','#22c55e','#facc15','#f87171','#8b5cf6','#0ea5e9','#fb923c','#14b8a6','#ec4899'];
 window._charts = window._charts || {};
+const _tabLoaded = { property: false, finances: false };
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -35,6 +36,14 @@ function setTopic(text) {
 function showTab(name) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
+  if (name === 'property' && !_tabLoaded.property) {
+    _tabLoaded.property = true;
+    searchRealEstate();
+  }
+  if (name === 'finances' && !_tabLoaded.finances) {
+    _tabLoaded.finances = true;
+    plaidStatus();
+  }
   location.hash = name;
 }
 
@@ -629,13 +638,25 @@ document.getElementById('btn_search_re')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_search_re'), searchRealEstate));
 
 // ---------- init ----------
-loadReFilters();
-loadTrends('stocks', 'stocks');
-loadTrends('crypto', 'crypto');
-loadYouTube();
-loadVideos();
-loadTranscripts();
-loadFinance();
-plaidStatus();
-loadContentStatus();
-searchRealEstate();
+async function initDashboard() {
+  loadReFilters();
+  const tab = (location.hash || '#overview').replace('#', '') || 'overview';
+  await Promise.all([
+    loadTrends('stocks', 'stocks'),
+    loadTrends('crypto', 'crypto'),
+    loadYouTube(),
+    loadVideos(),
+    loadTranscripts(),
+    loadFinance(),
+    loadContentStatus(),
+  ]);
+  if (tab === 'property') {
+    _tabLoaded.property = true;
+    searchRealEstate();
+  }
+  if (tab === 'finances') {
+    _tabLoaded.finances = true;
+    plaidStatus();
+  }
+}
+initDashboard();

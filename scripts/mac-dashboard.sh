@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 PORT="${GARY_PORT:-8000}"
 HOST="${GARY_HOST:-127.0.0.1}"
+URL="http://${HOST}:${PORT}"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This helper is for macOS. Use: .venv/bin/uvicorn gary.app:app --reload --host 0.0.0.0 --port ${PORT}" >&2
@@ -22,14 +23,25 @@ if [[ ! -x .venv/bin/uvicorn ]]; then
   bash scripts/install.sh
 fi
 
-if ! curl -sf "http://${HOST}:${PORT}/api/health" >/dev/null 2>&1; then
-  :
-else
-  echo "gary is already running at http://${HOST}:${PORT}"
-  open "http://${HOST}:${PORT}"
+_server_up() {
+  curl -sf "${URL}/api/health" >/dev/null 2>&1
+}
+
+if _server_up; then
+  echo "gary is already running at ${URL}"
+  open "$URL"
   exit 0
 fi
 
-echo "Starting gary at http://${HOST}:${PORT}"
-open "http://${HOST}:${PORT}" 2>/dev/null || true
+echo "Starting gary at ${URL}"
+(
+  for _ in $(seq 1 60); do
+    if _server_up; then
+      open "$URL" 2>/dev/null || true
+      exit 0
+    fi
+    sleep 0.25
+  done
+) &
+
 exec .venv/bin/uvicorn gary.app:app --reload --host "$HOST" --port "$PORT"
