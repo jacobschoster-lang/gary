@@ -113,6 +113,32 @@ Params: `city`, `state`, `radius` (mi), `min_acres`, `max_price`.
 
 Requires Python 3.10+.
 
+### Run on your Mac (dashboard at http://localhost:8000)
+
+One-time setup (clone the repo, then from the repo root):
+
+```bash
+brew install python@3.12   # if you don't have Python 3 yet
+bash scripts/install.sh
+```
+
+**Interactive dev server** (opens the dashboard in your browser):
+
+```bash
+bash scripts/mac-dashboard.sh
+```
+
+**Always-on background service** (starts at login, survives restarts):
+
+```bash
+bash scripts/install-mac-service.sh
+```
+
+Optional system tools for full features: `brew install ffmpeg tesseract` (video
+rendering + statement OCR).
+
+### Linux / cloud VM
+
 ```bash
 # 1. Create the virtualenv and install dependencies
 bash scripts/install.sh
