@@ -3,6 +3,20 @@ const GRID = 'rgba(255,255,255,0.06)';
 const PALETTE = ['#3b82f6','#22c55e','#facc15','#f87171','#8b5cf6','#0ea5e9','#fb923c','#14b8a6','#ec4899'];
 window._charts = window._charts || {};
 
+function esc(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function escAttr(s) { return esc(s).replace(/'/g, '&#39;'); }
+function safeUrl(url) {
+  const u = String(url ?? '');
+  return u.startsWith('https://') || u.startsWith('http://') ? u : '#';
+}
+function apiDetail(data, fallback) {
+  if (Array.isArray(data.detail)) return data.detail.map(e => e.msg || JSON.stringify(e)).join('; ');
+  if (typeof data.detail === 'string') return data.detail;
+  return fallback;
+}
+
 function chart(id, config) {
   const el = document.getElementById(id);
   if (!el || typeof Chart === 'undefined') return;
@@ -45,7 +59,7 @@ async function withLoading(btn, fn) {
 async function apiFetch(url, opts) {
   const res = await fetch(url, opts);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || res.statusText || 'request failed');
+  if (!res.ok) throw new Error(apiDetail(data, res.statusText || 'request failed'));
   return data;
 }
 
@@ -99,7 +113,7 @@ function renderTranscriptResult(data) {
   document.getElementById('result_title').textContent = data.title;
   document.getElementById('result_thumb').src = '/api/thumbnail.svg?topic=' + encodeURIComponent(data.topic || data.title) + '&t=' + Date.now();
   document.getElementById('result_body').innerHTML =
-    data.sections.map(s => `<p><strong>${s.heading}</strong><br>${s.script}</p>`).join('');
+    data.sections.map(s => `<p><strong>${esc(s.heading)}</strong><br>${esc(s.script)}</p>`).join('');
   document.getElementById('result_metrics').innerHTML = '';
 }
 
@@ -110,11 +124,11 @@ function renderPipelineResult(data) {
   document.getElementById('result_thumb').src = '/api/thumbnail.svg?topic=' + encodeURIComponent(data.topic) + '&t=' + Date.now();
   const m = data.metrics;
   document.getElementById('result_body').innerHTML =
-    `<p class="muted">Topic: ${data.topic}</p>` +
+    `<p class="muted">Topic: ${esc(data.topic)}</p>` +
     `<p>Long: ${data.video_long.total_seconds}s · ${data.video_long.segments.length} segments<br>` +
     `Short: ${data.video_short.total_seconds}s<br>` +
-    `Thumbnail: ${data.thumbnail.badge} / ${data.thumbnail.headline}</p>` +
-    `<p><a href="${data.published.url}" target="_blank">Published → ${data.published.url}</a></p>`;
+    `Thumbnail: ${esc(data.thumbnail.badge)} / ${esc(data.thumbnail.headline)}</p>` +
+    `<p><a href="${escAttr(safeUrl(data.published.url))}" target="_blank" rel="noopener">Published → ${esc(data.published.url)}</a></p>`;
   document.getElementById('result_metrics').innerHTML =
     `<div class="metric"><div class="k">Views</div><div class="v">${m.views.toLocaleString()}</div></div>` +
     `<div class="metric"><div class="k">Likes</div><div class="v">${m.likes.toLocaleString()}</div></div>` +
@@ -138,7 +152,7 @@ async function loadTrends(market, elId) {
       .map(t => {
         const topic = `${t.name} (${t.note || t.symbol})`;
         return `<li class="clickable" onclick="setTopic(${JSON.stringify(topic)})">` +
-          `${t.symbol} <span class="muted">${t.name} · ${t.note || t.score}</span></li>`;
+          `${esc(t.symbol)} <span class="muted">${esc(t.name)} · ${esc(t.note || t.score)}</span></li>`;
       }).join('');
   } catch (_) {
     document.getElementById(elId).innerHTML = '<li class="muted">Could not load trends.</li>';
@@ -150,7 +164,7 @@ async function loadYouTube() {
     const data = await apiFetch('/api/youtube-trends');
     document.getElementById('youtube').innerHTML = data.topics
       .map(t => `<li class="clickable" onclick="setTopic(${JSON.stringify(t.title)})">` +
-        `${t.title} <span class="muted">${t.channel} · ${t.views.toLocaleString()} views</span></li>`).join('');
+        `${esc(t.title)} <span class="muted">${esc(t.channel)} · ${t.views.toLocaleString()} views</span></li>`).join('');
   } catch (_) {
     document.getElementById('youtube').innerHTML = '<li class="muted">Could not load YouTube topics.</li>';
   }
@@ -167,19 +181,22 @@ async function loadVideos() {
     el.innerHTML = data.videos.map(v => {
       const m = v.metrics;
       const date = (v.published_at || '').slice(0, 10);
-      return `<div class="video-card" id="video-${v.video_id}">` +
-        `<div class="title"><a href="${v.url}" target="_blank">${v.title}</a></div>` +
-        `<span class="muted">${v.kind} · ${date}</span> · ` +
+      const vid = escAttr(v.video_id);
+      return `<div class="video-card" id="video-${vid}">` +
+        `<div class="title"><a href="${escAttr(safeUrl(v.url))}" target="_blank" rel="noopener">${esc(v.title)}</a></div>` +
+        `<span class="muted">${esc(v.kind)} · ${esc(date)}</span> · ` +
         `${m.views.toLocaleString()} views · ${m.likes} likes · ${m.comments} comments · CTR ${m.ctr_percent}%` +
         `<div class="row" style="margin-top:8px;">` +
-        `<button class="btn-slate" style="font-size:12px;padding:6px 10px;" onclick="toggleComments('${v.video_id}')">Draft replies</button>` +
+        `<button class="btn-slate" style="font-size:12px;padding:6px 10px;" onclick="toggleComments('${vid}')">Draft replies</button>` +
         `</div>` +
-        `<div class="comment-box" id="comments-${v.video_id}">` +
-        `<textarea id="comment-input-${v.video_id}" placeholder="One comment per line…"></textarea>` +
-        `<button class="btn-slate" style="margin-top:6px;font-size:12px;padding:6px 10px;" onclick="draftReplies('${v.video_id}')">Generate replies</button>` +
-        `<div id="comment-replies-${v.video_id}"></div></div></div>`;
+        `<div class="comment-box" id="comments-${vid}">` +
+        `<textarea id="comment-input-${vid}" placeholder="One comment per line…"></textarea>` +
+        `<button class="btn-slate" style="margin-top:6px;font-size:12px;padding:6px 10px;" onclick="draftReplies('${vid}')">Generate replies</button>` +
+        `<div id="comment-replies-${vid}"></div></div></div>`;
     }).join('');
-  } catch (_) {}
+  } catch (e) {
+    document.getElementById('videos').innerHTML = `<div class="muted">Could not load videos: ${esc(e.message)}</div>`;
+  }
 }
 
 async function toggleComments(videoId) {
@@ -197,10 +214,10 @@ async function draftReplies(videoId) {
       body: JSON.stringify({ comments })
     });
     document.getElementById('comment-replies-' + videoId).innerHTML = data.replies
-      .map(r => `<div class="reply-item"><strong>Q:</strong> ${r.comment}<br><strong>A:</strong> ${r.reply}</div>`).join('');
+      .map(r => `<div class="reply-item"><strong>Q:</strong> ${esc(r.comment)}<br><strong>A:</strong> ${esc(r.reply)}</div>`).join('');
   } catch (e) {
     document.getElementById('comment-replies-' + videoId).innerHTML =
-      `<div class="alert alert-error">${e.message}</div>`;
+      `<div class="alert alert-error">${esc(e.message)}</div>`;
   }
 }
 
@@ -214,7 +231,7 @@ async function loadTranscripts() {
     }
     el.innerHTML = data.transcripts.slice(0, 10).map(t =>
       `<li class="clickable" onclick="setTopic(${JSON.stringify(t.topic || t.title)})">` +
-      `<strong>${t.title}</strong> <span class="muted">(${t.word_count} words, ${(t.created_at||'').slice(0,10)})</span></li>`
+      `<strong>${esc(t.title)}</strong> <span class="muted">(${t.word_count} words, ${esc((t.created_at||'').slice(0,10))})</span></li>`
     ).join('');
   } catch (_) {}
 }
@@ -234,7 +251,7 @@ async function loadContentStatus() {
 function assetRow(a = {}) {
   const d = document.createElement('div'); d.className = 'fin-row fin-asset';
   d.innerHTML =
-    `<input class="a-name" placeholder="Asset name" value="${a.name || ''}"/>` +
+    `<input class="a-name" placeholder="Asset name" value="${escAttr(a.name || '')}"/>` +
     `<input class="a-value" type="number" placeholder="Value" value="${a.value ?? ''}"/>` +
     `<select class="a-kind">` +
     ['cash','investment','property','other'].map(k => `<option value="${k}" ${a.kind===k?'selected':''}>${k}</option>`).join('') +
@@ -244,7 +261,7 @@ function assetRow(a = {}) {
 function debtRow(d0 = {}) {
   const d = document.createElement('div'); d.className = 'fin-row fin-debt';
   d.innerHTML =
-    `<input class="d-name" placeholder="Debt name" value="${d0.name || ''}"/>` +
+    `<input class="d-name" placeholder="Debt name" value="${escAttr(d0.name || '')}"/>` +
     `<input class="d-balance" type="number" placeholder="Balance" value="${d0.balance ?? ''}"/>` +
     `<input class="d-apr" type="number" placeholder="APR %" value="${d0.apr ?? ''}"/>` +
     `<input class="d-min" type="number" placeholder="Min pay" value="${d0.min_payment ?? ''}"/>` +
@@ -308,14 +325,17 @@ function renderFinance(data) {
   document.getElementById('ov_surplus').textContent = money(data.health.metrics.monthly_surplus) + '/mo';
 
   const a = data.debt_plan.avalanche, s = data.debt_plan.snowball;
+  const truncNote = (a.timeline_truncated || s.timeline_truncated)
+    ? '<li class="muted">Chart shows first 120 months; minimum payments may not cover interest.</li>' : '';
   document.getElementById('fin_debtplan').innerHTML =
-    `<ul><li><strong>Avalanche</strong> (highest APR first): ${a.duration}, interest ${money(a.total_interest)} ` +
-    `<span class="muted">order: ${a.order.join(' → ')}</span></li>` +
-    `<li><strong>Snowball</strong> (smallest balance first): ${s.duration}, interest ${money(s.total_interest)}</li>` +
-    `<li class="muted">Recommended: <strong>${data.debt_plan.recommended}</strong> — saves ${money(Math.abs(data.debt_plan.interest_saved_with_avalanche))} in interest</li></ul>`;
+    `<ul><li><strong>Avalanche</strong> (highest APR first): ${esc(a.duration)}, interest ${money(a.total_interest)} ` +
+    `<span class="muted">order: ${a.order.map(esc).join(' → ')}</span></li>` +
+    `<li><strong>Snowball</strong> (smallest balance first): ${esc(s.duration)}, interest ${money(s.total_interest)}</li>` +
+    `<li class="muted">Recommended: <strong>${esc(data.debt_plan.recommended)}</strong> — saves ${money(Math.abs(data.debt_plan.interest_saved_with_avalanche))} in interest</li>` +
+    truncNote + `</ul>`;
 
   document.getElementById('fin_recs').innerHTML = data.health.recommendations
-    .map(r => `<div class="rec ${r.priority}"><span class="tag">${r.priority}</span><br>${r.text}</div>`).join('');
+    .map(r => `<div class="rec ${esc(r.priority)}"><span class="tag">${esc(r.priority)}</span><br>${esc(r.text)}</div>`).join('');
 
   const hist = data.history || [];
   chart('chart_networth', {
@@ -479,16 +499,23 @@ async function loadFinance() {
 
 // ---------- Plaid ----------
 async function plaidStatus() {
-  const res = await fetch('/api/finance/plaid/status');
-  const s = await res.json();
   const connect = document.getElementById('plaid_connect');
   const sync = document.getElementById('plaid_sync');
   const msg = document.getElementById('plaid_msg');
-  if (!s.configured) { connect.disabled = true;
-    msg.textContent = 'Plaid not configured — add PLAID_CLIENT_ID and PLAID_SECRET to enable.'; return; }
-  connect.disabled = false;
-  msg.textContent = `Plaid ready (${s.env}).` + (s.linked ? ' Bank linked.' : '');
-  sync.style.display = s.linked ? 'inline-block' : 'none';
+  try {
+    const s = await apiFetch('/api/finance/plaid/status');
+    if (!s.configured) {
+      connect.disabled = true;
+      msg.textContent = 'Plaid not configured — add PLAID_CLIENT_ID and PLAID_SECRET to enable.';
+      return;
+    }
+    connect.disabled = false;
+    msg.textContent = `Plaid ready (${s.env}).` + (s.linked ? ' Bank linked.' : '');
+    sync.style.display = s.linked ? 'inline-block' : 'none';
+  } catch (e) {
+    connect.disabled = true;
+    msg.textContent = 'Could not load Plaid status: ' + e.message;
+  }
 }
 async function plaidConnect() {
   const msg = document.getElementById('plaid_msg');

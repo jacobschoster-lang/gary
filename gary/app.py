@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from gary.agents import ThumbnailAgent, TranscriptAgent, TrendsAgent
 from gary.content import ContentStore
+from gary.content.store import ContentStoreError
 from gary.finance import (
     PlaidClient,
     PlaidError,
@@ -63,10 +64,6 @@ if _STATIC.is_dir():
 
 def _save_transcript(record: dict[str, Any]) -> None:
     content_store.add_transcript(record)
-
-
-def _save_published(video: Any) -> None:
-    content_store.add_video(video)
 
 
 class TranscriptRequest(BaseModel):
@@ -134,8 +131,11 @@ def run_pipeline(req: PipelineRequest) -> dict[str, Any]:
         result = pipeline.run_daily(req.topic, req.market)
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _save_transcript(result["transcript"])
-    _save_published(pipeline.publisher._videos[result["published"]["video_id"]])
+    video = pipeline.publisher._videos[result["published"]["video_id"]]
+    try:
+        content_store.save_pipeline_result(result["transcript"], video)
+    except ContentStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return result
 
 

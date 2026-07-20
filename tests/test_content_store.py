@@ -3,17 +3,25 @@
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from gary.agents.publisher_agent import PublishedVideo, Publisher
 from gary.app import app
-from gary.content.store import ContentStore
+from gary.content.store import ContentStore, ContentStoreError
+
+
+@pytest.fixture
+def isolated_content_store(tmp_path: Path, monkeypatch):
+    store = ContentStore(tmp_path / "content.json")
+    monkeypatch.setattr("gary.app.content_store", store)
+    return store
 
 
 def test_content_store_roundtrip(tmp_path: Path):
     path = tmp_path / "content.json"
     store = ContentStore(path)
-    store.add_transcript({"title": "T1", "topic": "Bitcoin", "word_count": 100})
+    store.add_transcript({"title": "T1", "topic": "Bitcoin", "word_count": 100, "created_at": "t1"})
     video = PublishedVideo("vid1", "Title", "long", "https://youtu.be/vid1", "2026-01-01T00:00:00Z")
     store.add_video(video)
 
@@ -26,7 +34,26 @@ def test_content_store_roundtrip(tmp_path: Path):
     assert "vid1" in pub._videos
 
 
-def test_content_status_endpoint():
+def test_content_store_skips_malformed_videos(tmp_path: Path):
+    path = tmp_path / "content.json"
+    path.write_text(
+        json.dumps({"transcripts": [], "videos": [{"video_id": "x"}]}),
+        encoding="utf-8",
+    )
+    store = ContentStore(path)
+    assert store.videos() == []
+
+
+def test_content_store_refuses_write_when_corrupt(tmp_path: Path):
+    path = tmp_path / "content.json"
+    path.write_text("{not json", encoding="utf-8")
+    store = ContentStore(path)
+    store.transcripts()
+    with pytest.raises(ContentStoreError):
+        store.add_transcript({"title": "T", "created_at": "now"})
+
+
+def test_content_status_endpoint(isolated_content_store):
     client = TestClient(app)
     res = client.get("/api/content/status")
     assert res.status_code == 200
@@ -35,7 +62,7 @@ def test_content_status_endpoint():
     assert "daily_post_schedule" in body
 
 
-def test_comment_drafts_endpoint():
+def test_comment_drafts_endpoint(isolated_content_store):
     client = TestClient(app)
     run = client.post("/api/pipeline/run", json={"topic": "Fed rate cuts"})
     assert run.status_code == 200
