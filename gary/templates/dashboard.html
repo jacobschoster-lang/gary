@@ -4,88 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Stickfigure Finance — dashboard</title>
+  <link rel="stylesheet" href="/static/dashboard.css" />
   <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <style>
-    :root {
-      color-scheme: dark;
-      --bg: #0a0e13;
-      --panel: #121924;
-      --panel-2: #0e141d;
-      --border: #1e2a38;
-      --text: #e6edf3;
-      --muted: #8b98a5;
-      --accent: #3b82f6;
-      --green: #22c55e;
-      --red: #f87171;
-      --gold: #facc15;
-      --purple: #8b5cf6;
-    }
-    * { box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
-      margin: 0; background: var(--bg); color: var(--text); line-height: 1.5;
-    }
-    header {
-      padding: 20px 28px; border-bottom: 1px solid var(--border);
-      background: linear-gradient(120deg, #16213a 0%, #0a0e13 60%);
-      display: flex; align-items: center; gap: 14px;
-    }
-    .logo {
-      width: 40px; height: 40px; border-radius: 10px; flex: none;
-      background: linear-gradient(135deg, var(--accent), var(--purple));
-      display: grid; place-items: center; font-weight: 800; font-size: 20px; color: #fff;
-    }
-    h1 { margin: 0; font-size: 20px; letter-spacing: .2px; }
-    .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
-    main { max-width: 1120px; margin: 0 auto; padding: 24px 28px 72px; }
-    .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1px;
-      color: var(--muted); margin: 28px 4px 12px; font-weight: 700; }
-    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-    .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    @media (max-width: 820px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
-    .card {
-      background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
-      padding: 20px; margin-bottom: 18px;
-    }
-    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: #9db2c6;
-      margin: 0 0 14px; font-weight: 700; }
-    label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
-    input, button, select {
-      font-size: 14px; padding: 10px 12px; border-radius: 9px; border: 1px solid #263446;
-      background: var(--panel-2); color: var(--text);
-    }
-    input, select { width: 100%; }
-    .field { margin-bottom: 10px; }
-    button { cursor: pointer; font-weight: 600; border: none; background: var(--accent); color: #fff; }
-    button:hover { filter: brightness(1.1); }
-    button:disabled { opacity: .5; cursor: not-allowed; }
-    .btn-green { background: var(--green); } .btn-purple { background: var(--purple); }
-    .btn-sky { background: #0ea5e9; } .btn-slate { background: #334155; } .btn-gray { background: #64748b; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    ul { list-style: none; padding: 0; margin: 0; }
-    li { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
-    li:last-child { border-bottom: none; }
-    .muted { color: var(--muted); font-weight: 400; font-size: 12px; }
-    pre { white-space: pre-wrap; background: var(--panel-2); padding: 12px; border-radius: 9px;
-      border: 1px solid var(--border); font-size: 13px; }
-    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-    @media (max-width: 820px) { .stats { grid-template-columns: 1fr 1fr; } }
-    .stat { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
-    .stat .k { font-size: 12px; color: var(--muted); }
-    .stat .v { font-size: 24px; font-weight: 800; margin-top: 4px; }
-    .chart-wrap { position: relative; height: 240px; margin-top: 6px; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
-    .badge-ok { background: rgba(34,197,94,.15); color: var(--green); }
-    .badge-warn { background: rgba(248,113,113,.15); color: var(--red); }
-    .rec { padding: 10px 12px; border-radius: 9px; margin-bottom: 8px; border-left: 3px solid var(--muted);
-      background: var(--panel-2); font-size: 13px; }
-    .rec.high { border-left-color: var(--red); } .rec.medium { border-left-color: var(--gold); }
-    .rec.low { border-left-color: var(--green); }
-    .tag { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
-    a { color: #7db3ff; }
-    hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
-  </style>
 </head>
 <body>
   <header>
@@ -96,514 +17,234 @@
     </div>
   </header>
   <main>
+    <nav class="tabs" aria-label="Dashboard sections">
+      <button class="tab active" data-tab="overview" type="button">Overview</button>
+      <button class="tab" data-tab="finances" type="button">Finances</button>
+      <button class="tab" data-tab="property" type="button">Property</button>
+      <button class="tab" data-tab="content" type="button">Content</button>
+    </nav>
 
-    <div class="section-title">Money</div>
-
-    <!-- Overview stats + charts -->
-    <div id="fin_out" class="card" style="display:none;">
-      <h2>Overview</h2>
-      <div class="stats">
-        <div class="stat"><div class="k">Net worth</div><div class="v" id="fin_networth">—</div></div>
-        <div class="stat"><div class="k">Health score</div><div class="v" id="fin_score">—</div></div>
-        <div class="stat"><div class="k">Monthly surplus</div><div class="v" id="fin_surplus">—</div></div>
-        <div class="stat"><div class="k">Retirement</div><div class="v" id="fin_ret_stat">—</div></div>
-      </div>
-      <div class="grid2" style="margin-top:16px;">
-        <div>
-          <h2>Net worth history</h2>
-          <div class="chart-wrap"><canvas id="chart_networth"></canvas></div>
-        </div>
-        <div>
-          <h2>Assets vs debts</h2>
-          <div class="chart-wrap"><canvas id="chart_assets"></canvas></div>
+    <!-- OVERVIEW -->
+    <section id="tab-overview" class="tab-panel active">
+      <div id="overview_empty" class="card empty-state">
+        <strong>Welcome to Stickfigure Finance</strong>
+        Enter your finances or load the sample profile to see your overview.
+        <div class="row" style="justify-content:center;margin-top:16px;">
+          <button onclick="showTab('finances')">Go to Finances</button>
+          <button class="btn-gray" onclick="loadSample()">Load sample data</button>
         </div>
       </div>
-      <hr />
-      <h2>Debt payoff options</h2>
-      <div id="fin_debtplan"></div>
-      <h2 style="margin-top:16px;">Recommendations</h2>
-      <div id="fin_recs"></div>
-    </div>
-
-    <div class="grid2">
-      <!-- Inputs -->
-      <div class="card">
-        <h2>My finances</h2>
-        <div class="grid2">
-          <div class="field"><label>Monthly income</label><input id="fin_income" type="number" placeholder="0" /></div>
-          <div class="field"><label>Monthly expenses</label><input id="fin_expenses" type="number" placeholder="0" /></div>
-          <div class="field"><label>Extra $/mo toward debt</label><input id="fin_extra" type="number" placeholder="0" /></div>
-          <div class="field"><label>Current age</label><input id="fin_age" type="number" placeholder="e.g. 34" /></div>
-          <div class="field"><label>Retirement age</label><input id="fin_ret_age" type="number" placeholder="65" /></div>
-          <div class="field"><label>Retirement $/mo</label><input id="fin_ret_contrib" type="number" placeholder="0" /></div>
-        </div>
-
-        <h2 style="margin-top:8px;">Assets</h2>
-        <div id="fin_assets"></div>
-        <button class="btn-slate" onclick="addAsset()">+ Add asset</button>
-
-        <h2 style="margin-top:14px;">Debts</h2>
-        <div id="fin_debts"></div>
-        <button class="btn-slate" onclick="addDebt()">+ Add debt</button>
-
-        <div class="row" style="margin-top:16px;">
-          <button onclick="saveFinance()">Save &amp; analyze</button>
-          <button class="btn-gray" onclick="loadSample()">Load sample</button>
-        </div>
-      </div>
-
-      <!-- Retirement -->
-      <div class="card">
-        <h2>Retirement outlook</h2>
-        <div id="ret_empty" class="muted">Enter your age and savings, then Save &amp; analyze.</div>
-        <div id="ret_out" style="display:none;">
-          <div class="row" style="justify-content:space-between;">
-            <div><div class="muted">Projected at retirement</div><div id="ret_projected" style="font-size:24px;font-weight:800;"></div></div>
-            <div><div class="muted">Needed (4% rule)</div><div id="ret_needed" style="font-size:24px;font-weight:800;"></div></div>
-            <div id="ret_badge"></div>
-          </div>
-          <div class="chart-wrap" style="margin-top:12px;"><canvas id="chart_retirement"></canvas></div>
-          <div id="ret_recs" style="margin-top:12px;"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Cash flow -->
-    <div class="card">
-      <h2>Cash flow &amp; income</h2>
-      <p class="muted" style="margin-top:0;">Upload a bank CSV export or a statement screenshot, or connect a bank for a true breakdown.</p>
-      <div class="row">
-        <input id="fin_file" type="file" accept=".csv,image/*" style="max-width:320px;" />
-        <button onclick="importFinance()">Import document</button>
-        <button id="plaid_connect" class="btn-sky" onclick="plaidConnect()" disabled>Connect a bank (Plaid)</button>
-        <button id="plaid_sync" class="btn-slate" onclick="plaidSync()" style="display:none;">Sync bank</button>
-      </div>
-      <div class="muted" style="margin-top:8px;"><span id="fin_import_msg"></span> <span id="plaid_msg"></span></div>
-
-      <div id="cf_out" style="margin-top:16px; display:none;">
+      <div id="overview_stats" class="card" style="display:none;">
+        <h2>At a glance</h2>
         <div class="stats">
-          <div class="stat"><div class="k">Income (total)</div><div class="v" style="color:var(--green)" id="cf_income">—</div></div>
-          <div class="stat"><div class="k">Expenses (total)</div><div class="v" style="color:var(--red)" id="cf_expenses">—</div></div>
-          <div class="stat"><div class="k">Net cash flow</div><div class="v" id="cf_net">—</div></div>
-          <div class="stat"><div class="k">Avg / month</div><div class="v" id="cf_avg" style="font-size:15px;">—</div></div>
+          <div class="stat"><div class="k">Net worth</div><div class="v" id="ov_networth">—</div></div>
+          <div class="stat"><div class="k">Health score</div><div class="v" id="ov_score">—</div></div>
+          <div class="stat"><div class="k">Monthly surplus</div><div class="v" id="ov_surplus">—</div></div>
+          <div class="stat"><div class="k">Retirement</div><div class="v" id="ov_ret_stat">—</div></div>
+        </div>
+      </div>
+      <div id="fin_out" class="card" style="display:none;">
+        <h2>Overview</h2>
+        <div class="stats">
+          <div class="stat"><div class="k">Net worth</div><div class="v" id="fin_networth">—</div></div>
+          <div class="stat"><div class="k">Health score</div><div class="v" id="fin_score">—</div></div>
+          <div class="stat"><div class="k">Monthly surplus</div><div class="v" id="fin_surplus">—</div></div>
+          <div class="stat"><div class="k">Retirement</div><div class="v" id="fin_ret_stat">—</div></div>
         </div>
         <div class="grid2" style="margin-top:16px;">
           <div>
-            <h2>Expenses by category</h2>
-            <div class="chart-wrap"><canvas id="chart_categories"></canvas></div>
+            <h2>Net worth history</h2>
+            <div class="chart-wrap"><canvas id="chart_networth"></canvas></div>
           </div>
           <div>
-            <h2>Monthly net cash flow</h2>
-            <div class="chart-wrap"><canvas id="chart_cashflow"></canvas></div>
+            <h2>Assets vs debts</h2>
+            <div class="chart-wrap"><canvas id="chart_assets"></canvas></div>
           </div>
         </div>
-        <div class="grid2" style="margin-top:8px;">
-          <div><h2>Income by source</h2><ul id="cf_income_src"></ul></div>
-          <div><h2>Recent transactions</h2><ul id="cf_txns"></ul></div>
+        <hr />
+        <h2>Debt payoff timeline</h2>
+        <div class="chart-wrap"><canvas id="chart_debt"></canvas></div>
+        <h2 style="margin-top:16px;">Debt payoff options</h2>
+        <div id="fin_debtplan"></div>
+        <h2 style="margin-top:16px;">Recommendations</h2>
+        <div id="fin_recs"></div>
+      </div>
+    </section>
+
+    <!-- FINANCES -->
+    <section id="tab-finances" class="tab-panel">
+      <div id="fin_empty" class="card empty-state" style="display:none;">
+        <strong>No financial profile yet</strong>
+        Fill in your details below or load the sample profile.
+      </div>
+      <div id="finance_alert" class="alert alert-error" style="display:none;"></div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>My finances</h2>
+          <div class="grid2">
+            <div class="field"><label>Monthly income</label><input id="fin_income" type="number" placeholder="0" /></div>
+            <div class="field"><label>Monthly expenses</label><input id="fin_expenses" type="number" placeholder="0" /></div>
+            <div class="field"><label>Extra $/mo toward debt</label><input id="fin_extra" type="number" placeholder="0" /></div>
+            <div class="field"><label>Current age</label><input id="fin_age" type="number" placeholder="e.g. 34" /></div>
+            <div class="field"><label>Retirement age</label><input id="fin_ret_age" type="number" placeholder="65" /></div>
+            <div class="field"><label>Retirement $/mo</label><input id="fin_ret_contrib" type="number" placeholder="0" /></div>
+          </div>
+          <h2 style="margin-top:8px;">Assets</h2>
+          <div id="fin_assets"></div>
+          <button type="button" class="btn-slate" onclick="addAsset()">+ Add asset</button>
+          <h2 style="margin-top:14px;">Debts</h2>
+          <div id="fin_debts"></div>
+          <button type="button" class="btn-slate" onclick="addDebt()">+ Add debt</button>
+          <div class="row" style="margin-top:16px;">
+            <button id="btn_save_finance" type="button">Save &amp; analyze</button>
+            <button id="btn_sample" type="button" class="btn-gray">Load sample</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Retirement outlook</h2>
+          <div id="ret_empty" class="muted">Enter your age and savings, then Save &amp; analyze.</div>
+          <div id="ret_out" style="display:none;">
+            <div class="row" style="justify-content:space-between;">
+              <div><div class="muted">Projected at retirement</div><div id="ret_projected" style="font-size:24px;font-weight:800;"></div></div>
+              <div><div class="muted">Needed (4% rule)</div><div id="ret_needed" style="font-size:24px;font-weight:800;"></div></div>
+              <div id="ret_badge"></div>
+            </div>
+            <div class="chart-wrap" style="margin-top:12px;"><canvas id="chart_retirement"></canvas></div>
+            <div id="ret_recs" style="margin-top:12px;"></div>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>Land &amp; homes for sale</h2>
-      <p class="muted" style="margin-top:0;">Active listings by radius, minimum acreage, and max price.</p>
-      <div class="grid3">
-        <div class="field"><label>City</label><input id="re_city" value="Cincinnati" /></div>
-        <div class="field"><label>State</label><input id="re_state" value="OH" /></div>
-        <div class="field"><label>Radius (mi)</label><input id="re_radius" type="number" value="25" /></div>
-        <div class="field"><label>Min acres</label><input id="re_acres" type="number" value="5" /></div>
-        <div class="field"><label>Max price ($)</label><input id="re_price" type="number" value="350000" /></div>
-        <div class="field" style="display:flex;align-items:flex-end;"><button onclick="searchRealEstate()" style="width:100%;">Search</button></div>
-      </div>
-      <div class="muted" id="re_msg" style="margin-top:4px;"></div>
-      <ul id="re_results" style="margin-top:10px;"></ul>
-    </div>
-
-    <div class="section-title">Content platform</div>
-
-    <div class="card">
-      <h2>Create content</h2>
-      <div class="field"><label>Finance topic</label><input id="topic" placeholder="e.g. Bitcoin ETF inflows" /></div>
-      <div class="row">
-        <button onclick="generate()">Generate transcript</button>
-        <button class="btn-green" onclick="runPipeline()">Run daily pipeline</button>
-        <button class="btn-purple" onclick="previewVideo()">Preview stick-figure video</button>
-      </div>
-      <pre id="out" style="margin-top:12px; display:none;"></pre>
-      <video id="preview" style="margin-top:12px; width:100%; display:none; border-radius:10px;" controls></video>
-    </div>
-
-    <div class="grid2">
       <div class="card">
-        <h2>Trending now</h2>
-        <div class="grid2">
-          <div><div class="tag">Stocks</div><ul id="stocks"></ul></div>
-          <div><div class="tag">Crypto</div><ul id="crypto"></ul></div>
+        <h2>Cash flow &amp; income</h2>
+        <p class="muted" style="margin-top:0;">Upload a bank CSV export or a statement screenshot, or connect a bank for a true breakdown.</p>
+        <div class="row">
+          <input id="fin_file" type="file" accept=".csv,image/*" style="max-width:320px;" />
+          <button type="button" onclick="importFinance()">Import document</button>
+          <button id="plaid_connect" type="button" class="btn-sky" onclick="plaidConnect()" disabled>Connect a bank (Plaid)</button>
+          <button id="plaid_sync" type="button" class="btn-slate" onclick="plaidSync()" style="display:none;">Sync bank</button>
         </div>
-        <div class="tag" style="margin-top:14px;">YouTube topics</div>
-        <ul id="youtube"></ul>
+        <div class="muted" style="margin-top:8px;"><span id="fin_import_msg"></span> <span id="plaid_msg"></span></div>
+
+        <div id="cf_out" style="margin-top:16px; display:none;">
+          <div class="stats">
+            <div class="stat"><div class="k">Income (total)</div><div class="v" style="color:var(--green)" id="cf_income">—</div></div>
+            <div class="stat"><div class="k">Expenses (total)</div><div class="v" style="color:var(--red)" id="cf_expenses">—</div></div>
+            <div class="stat"><div class="k">Net cash flow</div><div class="v" id="cf_net">—</div></div>
+            <div class="stat"><div class="k">Avg / month</div><div class="v" id="cf_avg" style="font-size:15px;">—</div></div>
+          </div>
+          <div class="grid2" style="margin-top:16px;">
+            <div>
+              <h2>Expenses by category</h2>
+              <div class="chart-wrap"><canvas id="chart_categories"></canvas></div>
+            </div>
+            <div>
+              <h2>Monthly net cash flow</h2>
+              <div class="chart-wrap"><canvas id="chart_cashflow"></canvas></div>
+            </div>
+          </div>
+          <div class="grid2" style="margin-top:8px;">
+            <div><h2>Income by source</h2><ul id="cf_income_src"></ul></div>
+            <div><h2>Recent transactions</h2><ul id="cf_txns"></ul></div>
+          </div>
+        </div>
       </div>
+
+      <div id="budget_out" class="card" style="display:none;">
+        <h2>Budget vs actual (monthly avg)</h2>
+        <table style="width:100%;border-collapse:collapse;font-size:14px;">
+          <thead><tr class="muted"><th style="text-align:left;padding:6px 0;">Category</th><th style="text-align:right;">Budget</th><th style="text-align:right;">Actual</th><th style="text-align:right;">Delta</th></tr></thead>
+          <tbody id="budget_rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PROPERTY -->
+    <section id="tab-property" class="tab-panel">
       <div class="card">
-        <h2>Published videos</h2>
-        <ul id="videos"><li class="muted">Run the pipeline to publish a video.</li></ul>
-        <h2 style="margin-top:16px;">Recent transcripts</h2>
-        <ul id="transcripts"><!--TRANSCRIPTS--></ul>
+        <h2>Land &amp; homes for sale</h2>
+        <p class="muted" style="margin-top:0;">Active listings by radius, minimum acreage, and max price.</p>
+        <div class="grid3">
+          <div class="field"><label>City</label><input id="re_city" value="Cincinnati" /></div>
+          <div class="field"><label>State</label><input id="re_state" value="OH" /></div>
+          <div class="field"><label>Radius (mi)</label><input id="re_radius" type="number" value="25" /></div>
+          <div class="field"><label>Min acres</label><input id="re_acres" type="number" value="5" /></div>
+          <div class="field"><label>Max price ($)</label><input id="re_price" type="number" value="350000" /></div>
+          <div class="field"><label>Sort by</label>
+            <select id="re_sort">
+              <option value="distance">Distance</option>
+              <option value="price_asc">Price (low → high)</option>
+              <option value="price_desc">Price (high → low)</option>
+              <option value="acres_desc">Acreage</option>
+              <option value="ppa">Price per acre</option>
+            </select>
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <button id="btn_search_re" type="button">Search</button>
+        </div>
+        <div class="muted" id="re_msg" style="margin-top:4px;"></div>
+        <ul id="re_results" style="margin-top:10px;"></ul>
       </div>
-    </div>
+    </section>
+
+    <!-- CONTENT -->
+    <section id="tab-content" class="tab-panel">
+      <div class="card">
+        <h2>Platform status</h2>
+        <div id="content_status" class="muted">Loading…</div>
+      </div>
+
+      <div class="card">
+        <h2>Create content</h2>
+        <div id="content_alert" class="alert alert-error" style="display:none;"></div>
+        <div class="field"><label>Finance topic</label><input id="topic" placeholder="e.g. Bitcoin ETF inflows" /></div>
+        <div class="row">
+          <button id="btn_generate" type="button">Generate transcript</button>
+          <button id="btn_pipeline" type="button" class="btn-green">Run daily pipeline</button>
+          <button type="button" class="btn-purple" onclick="previewVideo()">Preview stick-figure video</button>
+          <button type="button" class="btn-slate" onclick="useTopTrend('crypto')">Use top crypto trend</button>
+          <button type="button" class="btn-slate" onclick="useTopTrend('stocks')">Use top stock trend</button>
+        </div>
+
+        <div id="content_result" class="card" style="display:none;margin-top:14px;background:var(--panel-2);">
+          <h2 id="result_title">Result</h2>
+          <div class="result-grid">
+            <img id="result_thumb" class="thumb-preview" alt="Thumbnail preview" />
+            <div>
+              <div class="result-meta">
+                <div class="metric-row" id="result_metrics"></div>
+                <div id="result_body"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <video id="preview" style="margin-top:12px; width:100%; display:none; border-radius:10px;" controls></video>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Trending now</h2>
+          <p class="muted" style="margin-top:0;">Click a topic to use it above.</p>
+          <div class="grid2">
+            <div><div class="tag">Stocks</div><ul id="stocks"></ul></div>
+            <div><div class="tag">Crypto</div><ul id="crypto"></ul></div>
+          </div>
+          <div class="tag" style="margin-top:14px;">YouTube topics</div>
+          <ul id="youtube"></ul>
+        </div>
+        <div class="card">
+          <h2>Published videos</h2>
+          <div id="videos"><div class="muted">Run the pipeline to publish a video.</div></div>
+          <h2 style="margin-top:16px;">Recent transcripts</h2>
+          <ul id="transcripts"><li class="muted">No transcripts yet.</li></ul>
+        </div>
+      </div>
+    </section>
   </main>
-
-  <script>
-    const money = n => '$' + Number(n || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
-    const GRID = 'rgba(255,255,255,0.06)';
-    const PALETTE = ['#3b82f6','#22c55e','#facc15','#f87171','#8b5cf6','#0ea5e9','#fb923c','#14b8a6','#ec4899'];
-    window._charts = window._charts || {};
-    function chart(id, config) {
-      const el = document.getElementById(id);
-      if (!el || typeof Chart === 'undefined') return;
-      if (window._charts[id]) window._charts[id].destroy();
-      Chart.defaults.color = '#8b98a5';
-      Chart.defaults.font.family = 'Inter, system-ui, sans-serif';
-      window._charts[id] = new Chart(el, config);
-    }
-
-    // ---------- Content platform ----------
-    async function generate() {
-      const topic = document.getElementById('topic').value.trim();
-      if (!topic) return;
-      const res = await fetch('/api/transcript', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic })
-      });
-      const data = await res.json();
-      const out = document.getElementById('out');
-      out.style.display = 'block';
-      out.textContent = data.title + "\n\n" + data.sections.map(s => s.heading + ": " + s.script).join("\n\n");
-    }
-    async function runPipeline() {
-      const topic = document.getElementById('topic').value.trim();
-      const res = await fetch('/api/pipeline/run', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(topic ? { topic } : {})
-      });
-      const data = await res.json();
-      const out = document.getElementById('out');
-      out.style.display = 'block';
-      out.textContent =
-        "Topic: " + data.topic + "\n" +
-        "Long video: " + data.video_long.total_seconds + "s over " + data.video_long.segments.length + " segments\n" +
-        "Short video: " + data.video_short.total_seconds + "s\n" +
-        "Thumbnail: " + data.thumbnail.badge + " / " + data.thumbnail.headline + "\n" +
-        "Published: " + data.published.url + "\nMetrics: " + JSON.stringify(data.metrics);
-      loadVideos();
-    }
-    function previewVideo() {
-      const topic = document.getElementById('topic').value.trim() || 'Bitcoin ETF inflows';
-      const v = document.getElementById('preview');
-      v.style.display = 'block';
-      v.src = '/api/story.mp4?topic=' + encodeURIComponent(topic) + '&t=' + Date.now();
-      v.load(); v.play().catch(() => {});
-    }
-    async function loadTrends(market, elId) {
-      const res = await fetch('/api/trends?market=' + market);
-      const data = await res.json();
-      document.getElementById(elId).innerHTML = data.trends
-        .map(t => `<li>${t.symbol} <span class="muted">${t.name} · ${t.note || t.score}</span></li>`).join('');
-    }
-    async function loadYouTube() {
-      const res = await fetch('/api/youtube-trends');
-      const data = await res.json();
-      document.getElementById('youtube').innerHTML = data.topics
-        .map(t => `<li>${t.title} <span class="muted">${t.channel} · ${t.views.toLocaleString()} views</span></li>`).join('');
-    }
-    async function loadVideos() {
-      const res = await fetch('/api/videos');
-      const data = await res.json();
-      if (!data.count) return;
-      document.getElementById('videos').innerHTML = data.videos
-        .map(v => `<li><a href="${v.url}" target="_blank">${v.title}</a> <span class="muted">${v.kind} · ${v.metrics.views.toLocaleString()} views · CTR ${v.metrics.ctr_percent}%</span></li>`).join('');
-    }
-
-    // ---------- Finance inputs ----------
-    function assetRow(a = {}) {
-      const d = document.createElement('div'); d.className = 'fin-asset';
-      d.style.display = 'grid'; d.style.gridTemplateColumns = '2fr 1fr 1fr'; d.style.gap = '6px'; d.style.marginBottom = '6px';
-      d.innerHTML =
-        `<input class="a-name" placeholder="Asset name" value="${a.name || ''}"/>` +
-        `<input class="a-value" type="number" placeholder="Value" value="${a.value ?? ''}"/>` +
-        `<select class="a-kind">` +
-        ['cash','investment','property','other'].map(k => `<option value="${k}" ${a.kind===k?'selected':''}>${k}</option>`).join('') +
-        `</select>`;
-      return d;
-    }
-    function debtRow(d0 = {}) {
-      const d = document.createElement('div'); d.className = 'fin-debt';
-      d.style.display = 'grid'; d.style.gridTemplateColumns = '2fr 1fr 1fr 1fr'; d.style.gap = '6px'; d.style.marginBottom = '6px';
-      d.innerHTML =
-        `<input class="d-name" placeholder="Debt name" value="${d0.name || ''}"/>` +
-        `<input class="d-balance" type="number" placeholder="Balance" value="${d0.balance ?? ''}"/>` +
-        `<input class="d-apr" type="number" placeholder="APR %" value="${d0.apr ?? ''}"/>` +
-        `<input class="d-min" type="number" placeholder="Min pay" value="${d0.min_payment ?? ''}"/>`;
-      return d;
-    }
-    function addAsset(a) { document.getElementById('fin_assets').appendChild(assetRow(a)); }
-    function addDebt(d) { document.getElementById('fin_debts').appendChild(debtRow(d)); }
-
-    function collectProfile() {
-      const assets = [...document.querySelectorAll('.fin-asset')].map(r => ({
-        name: r.querySelector('.a-name').value,
-        value: parseFloat(r.querySelector('.a-value').value) || 0,
-        kind: r.querySelector('.a-kind').value,
-      })).filter(a => a.name);
-      const debts = [...document.querySelectorAll('.fin-debt')].map(r => ({
-        name: r.querySelector('.d-name').value,
-        balance: parseFloat(r.querySelector('.d-balance').value) || 0,
-        apr: parseFloat(r.querySelector('.d-apr').value) || 0,
-        min_payment: parseFloat(r.querySelector('.d-min').value) || 0,
-      })).filter(d => d.name);
-      return {
-        monthly_income: parseFloat(document.getElementById('fin_income').value) || 0,
-        monthly_expenses: parseFloat(document.getElementById('fin_expenses').value) || 0,
-        extra_debt_payment: parseFloat(document.getElementById('fin_extra').value) || 0,
-        age: parseInt(document.getElementById('fin_age').value) || 0,
-        retirement_age: parseInt(document.getElementById('fin_ret_age').value) || 65,
-        monthly_retirement_contribution: parseFloat(document.getElementById('fin_ret_contrib').value) || 0,
-        assets, debts,
-      };
-    }
-    function fillForm(p) {
-      document.getElementById('fin_income').value = p.monthly_income || '';
-      document.getElementById('fin_expenses').value = p.monthly_expenses || '';
-      document.getElementById('fin_extra').value = p.extra_debt_payment || '';
-      document.getElementById('fin_age').value = p.age || '';
-      document.getElementById('fin_ret_age').value = p.retirement_age || '';
-      document.getElementById('fin_ret_contrib').value = p.monthly_retirement_contribution || '';
-      document.getElementById('fin_assets').innerHTML = '';
-      document.getElementById('fin_debts').innerHTML = '';
-      (p.assets || []).forEach(addAsset);
-      (p.debts || []).forEach(addDebt);
-      if (!(p.assets || []).length) addAsset();
-      if (!(p.debts || []).length) addDebt();
-    }
-
-    function renderFinance(data) {
-      document.getElementById('fin_out').style.display = 'block';
-      document.getElementById('fin_networth').textContent = money(data.net_worth.net_worth);
-      document.getElementById('fin_score').textContent = data.health.score + ' (' + data.health.grade + ')';
-      document.getElementById('fin_surplus').textContent = money(data.health.metrics.monthly_surplus) + '/mo';
-
-      const a = data.debt_plan.avalanche, s = data.debt_plan.snowball;
-      document.getElementById('fin_debtplan').innerHTML =
-        `<ul><li><strong>Avalanche</strong> (highest APR first): ${a.duration}, interest ${money(a.total_interest)} ` +
-        `<span class="muted">order: ${a.order.join(' → ')}</span></li>` +
-        `<li><strong>Snowball</strong> (smallest balance first): ${s.duration}, interest ${money(s.total_interest)}</li>` +
-        `<li class="muted">Recommended: <strong>${data.debt_plan.recommended}</strong> — saves ${money(Math.abs(data.debt_plan.interest_saved_with_avalanche))} in interest</li></ul>`;
-
-      document.getElementById('fin_recs').innerHTML = data.health.recommendations
-        .map(r => `<div class="rec ${r.priority}"><span class="tag">${r.priority}</span><br>${r.text}</div>`).join('');
-
-      // net worth history line
-      const hist = data.history || [];
-      chart('chart_networth', {
-        type: 'line',
-        data: { labels: hist.map(h => h.date), datasets: [{
-          label: 'Net worth', data: hist.map(h => h.value),
-          borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.15)', fill: true, tension: .3, pointRadius: 3 }] },
-        options: { maintainAspectRatio: false, plugins: { legend: { display: false } },
-          scales: { x: { grid: { color: GRID } }, y: { grid: { color: GRID }, ticks: { callback: v => '$' + (v/1000) + 'k' } } } }
-      });
-      // assets vs debts
-      const nb = data.net_worth;
-      chart('chart_assets', {
-        type: 'bar',
-        data: { labels: ['Assets', 'Debts'], datasets: [{ data: [nb.total_assets, nb.total_debts],
-          backgroundColor: ['#22c55e', '#f87171'] }] },
-        options: { maintainAspectRatio: false, plugins: { legend: { display: false } },
-          scales: { x: { grid: { display: false } }, y: { grid: { color: GRID }, ticks: { callback: v => '$' + (v/1000) + 'k' } } } }
-      });
-
-      renderRetirement(data.retirement);
-    }
-
-    function renderRetirement(r) {
-      if (!r) return;
-      document.getElementById('fin_ret_stat').textContent = r.on_track ? 'On track' : 'Behind';
-      document.getElementById('fin_ret_stat').style.color = r.on_track ? 'var(--green)' : 'var(--red)';
-      if (!r.age) { document.getElementById('ret_out').style.display = 'none';
-        document.getElementById('ret_empty').style.display = 'block'; return; }
-      document.getElementById('ret_empty').style.display = 'none';
-      document.getElementById('ret_out').style.display = 'block';
-      document.getElementById('ret_projected').textContent = money(r.projected_savings);
-      document.getElementById('ret_needed').textContent = money(r.nest_egg_needed);
-      document.getElementById('ret_badge').innerHTML = r.on_track
-        ? '<span class="badge badge-ok">On track</span>'
-        : '<span class="badge badge-warn">Behind</span>';
-      document.getElementById('ret_recs').innerHTML = r.recommendations
-        .map(x => `<div class="rec ${x.priority}"><span class="tag">${x.priority}</span><br>${x.text}</div>`).join('');
-      const proj = r.projection || [];
-      chart('chart_retirement', {
-        type: 'line',
-        data: { labels: proj.map(p => p.age), datasets: [
-          { label: 'Projected balance', data: proj.map(p => p.balance), borderColor: '#8b5cf6',
-            backgroundColor: 'rgba(139,92,246,.15)', fill: true, tension: .3, pointRadius: 0 },
-          { label: 'Needed', data: proj.map(() => r.nest_egg_needed), borderColor: '#facc15',
-            borderDash: [6,6], pointRadius: 0, fill: false } ] },
-        options: { maintainAspectRatio: false,
-          plugins: { legend: { display: true, labels: { boxWidth: 12 } },
-            tooltip: { callbacks: { label: c => c.dataset.label + ': ' + money(c.parsed.y) } } },
-          scales: { x: { title: { display: true, text: 'Age' }, grid: { color: GRID } },
-            y: { grid: { color: GRID }, ticks: { callback: v => '$' + (v/1000) + 'k' } } } }
-      });
-    }
-
-    async function saveFinance() {
-      const res = await fetch('/api/finance', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(collectProfile()) });
-      const data = await res.json();
-      renderFinance(data); renderCashflow(data);
-    }
-    async function loadSample() {
-      const res = await fetch('/api/finance/sample', {method: 'POST'});
-      const data = await res.json();
-      fillForm(data.profile); renderFinance(data); renderCashflow(data);
-    }
-
-    // ---------- Cash flow ----------
-    function renderCashflow(data) {
-      const cf = data.cashflow;
-      if (!cf || !cf.transaction_count) return;
-      document.getElementById('cf_out').style.display = 'block';
-      document.getElementById('cf_income').textContent = money(cf.total_income);
-      document.getElementById('cf_expenses').textContent = money(cf.total_expenses);
-      const net = document.getElementById('cf_net');
-      net.textContent = money(cf.net_cashflow);
-      net.style.color = cf.net_cashflow >= 0 ? 'var(--green)' : 'var(--red)';
-      document.getElementById('cf_avg').textContent = `${money(cf.avg_monthly_income)} in / ${money(cf.avg_monthly_expenses)} out`;
-      document.getElementById('cf_income_src').innerHTML = cf.income_by_source
-        .map(s => `<li>${s.source} <span class="muted">${money(s.amount)}</span></li>`).join('') || '<li class="muted">—</li>';
-      document.getElementById('cf_txns').innerHTML = (data.recent_transactions || []).slice(0, 8)
-        .map(t => `<li>${t.date} ${t.description} <span class="muted">${t.category}</span> ` +
-          `<span style="color:${t.amount>=0?'var(--green)':'var(--red)'}">${money(t.amount)}</span></li>`).join('');
-
-      const cats = cf.expenses_by_category || [];
-      chart('chart_categories', {
-        type: 'doughnut',
-        data: { labels: cats.map(c => c.category), datasets: [{ data: cats.map(c => c.amount), backgroundColor: PALETTE }] },
-        options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { boxWidth: 12 } },
-          tooltip: { callbacks: { label: c => c.label + ': ' + money(c.parsed) } } } }
-      });
-      const bym = cf.by_month || [];
-      chart('chart_cashflow', {
-        type: 'bar',
-        data: { labels: bym.map(m => m.month), datasets: [{ label: 'Net', data: bym.map(m => m.net),
-          backgroundColor: bym.map(m => m.net >= 0 ? '#22c55e' : '#f87171') }] },
-        options: { maintainAspectRatio: false, plugins: { legend: { display: false } },
-          scales: { x: { grid: { display: false } }, y: { grid: { color: GRID }, ticks: { callback: v => '$' + v } } } }
-      });
-    }
-
-    async function importFinance() {
-      const input = document.getElementById('fin_file');
-      const msg = document.getElementById('fin_import_msg');
-      if (!input.files.length) { msg.textContent = 'Choose a file first.'; return; }
-      msg.textContent = 'Importing…';
-      const fd = new FormData(); fd.append('file', input.files[0]);
-      const res = await fetch('/api/finance/import', {method: 'POST', body: fd});
-      const data = await res.json();
-      if (!res.ok) { msg.textContent = 'Error: ' + (data.detail || 'import failed'); return; }
-      msg.textContent = `Imported ${data.imported.added} rows from ${data.imported.source}.`;
-      fillForm(data.profile); renderFinance(data); renderCashflow(data);
-    }
-    async function loadFinance() {
-      const res = await fetch('/api/finance');
-      const data = await res.json();
-      fillForm(data.profile);
-      if ((data.profile.assets || []).length || (data.profile.debts || []).length) renderFinance(data);
-      renderCashflow(data);
-    }
-
-    // ---------- Plaid ----------
-    async function plaidStatus() {
-      const res = await fetch('/api/finance/plaid/status');
-      const s = await res.json();
-      const connect = document.getElementById('plaid_connect');
-      const sync = document.getElementById('plaid_sync');
-      const msg = document.getElementById('plaid_msg');
-      if (!s.configured) { connect.disabled = true;
-        msg.textContent = 'Plaid not configured — add PLAID_CLIENT_ID and PLAID_SECRET to enable.'; return; }
-      connect.disabled = false;
-      msg.textContent = `Plaid ready (${s.env}).` + (s.linked ? ' Bank linked.' : '');
-      sync.style.display = s.linked ? 'inline-block' : 'none';
-    }
-    async function plaidConnect() {
-      const msg = document.getElementById('plaid_msg');
-      msg.textContent = 'Opening Plaid…';
-      const res = await fetch('/api/finance/plaid/link-token', {method: 'POST'});
-      const data = await res.json();
-      if (!res.ok) { msg.textContent = 'Error: ' + (data.detail || 'link token failed'); return; }
-      if (typeof Plaid === 'undefined') { msg.textContent = 'Plaid Link script not loaded.'; return; }
-      const handler = Plaid.create({
-        token: data.link_token,
-        onSuccess: async (public_token) => {
-          msg.textContent = 'Linking & pulling accounts…';
-          const ex = await fetch('/api/finance/plaid/exchange', {
-            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({public_token}) });
-          const d = await ex.json();
-          if (!ex.ok) { msg.textContent = 'Error: ' + (d.detail || 'exchange failed'); return; }
-          msg.textContent = `Linked! Pulled ${d.imported.added} transactions.`;
-          fillForm(d.profile); renderFinance(d); renderCashflow(d); plaidStatus();
-        },
-        onExit: (err) => { if (err) msg.textContent = 'Plaid exited: ' + (err.display_message || err.error_message || ''); },
-      });
-      handler.open();
-    }
-    async function plaidSync() {
-      const msg = document.getElementById('plaid_msg');
-      msg.textContent = 'Syncing…';
-      const res = await fetch('/api/finance/plaid/sync', {method: 'POST'});
-      const d = await res.json();
-      if (!res.ok) { msg.textContent = 'Error: ' + (d.detail || 'sync failed'); return; }
-      msg.textContent = `Synced ${d.imported.added} transactions.`;
-      fillForm(d.profile); renderFinance(d); renderCashflow(d);
-    }
-
-    // ---------- Real estate ----------
-    async function searchRealEstate() {
-      const msg = document.getElementById('re_msg');
-      const results = document.getElementById('re_results');
-      msg.textContent = 'Searching…'; results.innerHTML = '';
-      const q = new URLSearchParams({
-        city: document.getElementById('re_city').value || 'Cincinnati',
-        state: document.getElementById('re_state').value || 'OH',
-        radius: document.getElementById('re_radius').value || 25,
-        min_acres: document.getElementById('re_acres').value || 5,
-        max_price: document.getElementById('re_price').value || 350000,
-      });
-      const res = await fetch('/api/realestate?' + q.toString());
-      const data = await res.json();
-      const src = data.source === 'rentcast'
-        ? '<span class="badge badge-ok">live</span>'
-        : '<span class="badge badge-warn">sample data — add RENTCAST_API_KEY for live</span>';
-      msg.innerHTML = `${data.count} listings within ${data.filters.radius} mi of ` +
-        `${data.filters.city}, ${data.filters.state} · ${data.filters.min_acres}+ acres · ` +
-        `under ${money(data.filters.max_price)} ${src}`;
-      results.innerHTML = data.listings.map(l =>
-        `<li><a href="${l.url}" target="_blank">${l.address}, ${l.city} ${l.state}</a> ` +
-        `<span style="color:var(--green);font-weight:700;">${money(l.price)}</span> ` +
-        `<span class="muted">${l.acres} acres` +
-        (l.beds ? ` · ${l.beds}bd/${l.baths||'?'}ba` : '') +
-        (l.distance_mi != null ? ` · ${l.distance_mi} mi` : '') +
-        (l.listed_date ? ` · listed ${l.listed_date}` : '') + `</span></li>`
-      ).join('') || '<li class="muted">No matching listings.</li>';
-    }
-
-    // ---------- init ----------
-    loadTrends('stocks', 'stocks');
-    loadTrends('crypto', 'crypto');
-    loadYouTube();
-    loadVideos();
-    loadFinance();
-    plaidStatus();
-    searchRealEstate();
-  </script>
+  <script src="/static/dashboard.js"></script>
 </body>
 </html>

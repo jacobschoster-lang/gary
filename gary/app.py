@@ -14,9 +14,12 @@ from typing import Any
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from gary.agents import ThumbnailAgent, TranscriptAgent, TrendsAgent
+from gary.content import ContentStore
+from gary.content.store import ContentStoreError
 from gary.finance import (
     PlaidClient,
     PlaidError,
@@ -44,16 +47,23 @@ _TEMPLATE = (Path(__file__).parent / "templates" / "dashboard.html").read_text(
     encoding="utf-8"
 )
 
-# In-memory store of generated transcripts (swap for a DB later).
-_transcripts: list[dict[str, Any]] = []
-
 transcript_agent = TranscriptAgent()
 trends_agent = TrendsAgent()
 thumbnail_agent = ThumbnailAgent()
-pipeline = ContentPipeline()
 finance_store = ProfileStore()
 plaid_tokens = PlaidTokenStore()
+pipeline = ContentPipeline()
+content_store = ContentStore()
+content_store.hydrate_publisher(pipeline.publisher)
 _PLAID_NOT_CONFIGURED = "Plaid not configured (set PLAID_CLIENT_ID/SECRET)"
+
+_STATIC = Path(__file__).parent / "static"
+if _STATIC.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
+
+
+def _save_transcript(record: dict[str, Any]) -> None:
+    content_store.add_transcript(record)
 
 
 class TranscriptRequest(BaseModel):
@@ -96,13 +106,14 @@ def create_transcript(req: TranscriptRequest) -> dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     record = transcript.to_dict()
-    _transcripts.insert(0, record)
+    _save_transcript(record)
     return record
 
 
 @app.get("/api/transcripts")
 def list_transcripts() -> dict[str, Any]:
-    return {"count": len(_transcripts), "transcripts": _transcripts}
+    rows = content_store.transcripts()
+    return {"count": len(rows), "transcripts": rows}
 
 
 @app.get("/api/thumbnail.svg")
@@ -120,7 +131,11 @@ def run_pipeline(req: PipelineRequest) -> dict[str, Any]:
         result = pipeline.run_daily(req.topic, req.market)
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    _transcripts.insert(0, result["transcript"])
+    video = pipeline.publisher._videos[result["published"]["video_id"]]
+    try:
+        content_store.save_pipeline_result(result["transcript"], video)
+    except ContentStoreError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return result
 
 
@@ -144,12 +159,41 @@ def story_video(topic: str, voice: bool = False) -> FileResponse:
 
 @app.get("/api/videos")
 def list_videos() -> dict[str, Any]:
+    content_store.hydrate_publisher(pipeline.publisher)
     videos = pipeline.publisher.videos()
+    videos.sort(key=lambda v: v.published_at, reverse=True)
     return {
         "count": len(videos),
         "videos": [
             {**v.to_dict(), "metrics": pipeline.publisher.track(v.video_id)} for v in videos
         ],
+    }
+
+
+class CommentDraftIn(BaseModel):
+    comments: list[str] = Field(default_factory=list)
+    top_n: int = Field(default=10, ge=1, le=50)
+
+
+@app.post("/api/videos/{video_id}/comments")
+def draft_comment_replies(video_id: str, req: CommentDraftIn) -> dict[str, Any]:
+    content_store.hydrate_publisher(pipeline.publisher)
+    try:
+        replies = pipeline.publisher.manage_comments(video_id, req.comments, req.top_n)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"video_id": video_id, "replies": replies}
+
+
+@app.get("/api/content/status")
+def content_status() -> dict[str, Any]:
+    return {
+        "transcripts": len(content_store.transcripts()),
+        "videos": len(content_store.videos()),
+        "llm_enabled": bool(os.environ.get("OPENAI_API_KEY")),
+        "plaid_configured": PlaidClient.from_env() is not None,
+        "rentcast_configured": bool(os.environ.get("RENTCAST_API_KEY")),
+        "daily_post_schedule": "08:00 America/New_York via GitHub Actions",
     }
 
 
@@ -357,11 +401,4 @@ def realestate(
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard() -> str:
-    rows = "".join(
-        f"<li><strong>{t['title']}</strong> "
-        f"<span class='muted'>({t['word_count']} words, {t['created_at']})</span></li>"
-        for t in _transcripts[:10]
-    )
-    if not rows:
-        rows = "<li class='muted'>No transcripts yet. Generate one above.</li>"
-    return _TEMPLATE.replace("<!--TRANSCRIPTS-->", rows)
+    return _TEMPLATE

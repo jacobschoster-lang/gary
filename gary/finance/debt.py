@@ -13,6 +13,7 @@ from gary.finance.models import Debt
 
 Strategy = Literal["avalanche", "snowball"]
 _MAX_MONTHS = 1200  # 100 years cap to guard against non-converging inputs
+_TIMELINE_DISPLAY_CAP = 120
 
 
 def _order(debts: list[Debt], strategy: Strategy) -> list[int]:
@@ -40,7 +41,7 @@ def payoff_plan(
         return {
             "strategy": strategy, "months": 0, "duration": "0 months",
             "total_interest": 0.0, "total_paid": 0.0, "order": [],
-            "payoff_month": {}, "converged": True,
+            "payoff_month": {}, "timeline": [], "timeline_truncated": False, "converged": True,
         }
 
     order = _order([Debt(a["name"], a["balance"], a["apr"], a["min"]) for a in active], strategy)
@@ -49,9 +50,11 @@ def payoff_plan(
     total_interest = 0.0
     total_paid = 0.0
     payoff_month: dict[str, int] = {}
+    timeline: list[float] = []
     months = 0
 
     while any(a["balance"] > 0.005 for a in active) and months < _MAX_MONTHS:
+        timeline.append(round(sum(max(a["balance"], 0) for a in active), 2))
         months += 1
         # Accrue interest.
         for a in active:
@@ -87,6 +90,12 @@ def payoff_plan(
                 payoff_month[a["name"]] = months
 
     converged = all(a["balance"] <= 0.005 for a in active)
+    if timeline and timeline[-1] > 0.005:
+        timeline.append(0.0)
+    truncated = len(timeline) > _TIMELINE_DISPLAY_CAP or not converged
+    display_timeline = timeline[:_TIMELINE_DISPLAY_CAP]
+    if truncated and timeline and (not display_timeline or display_timeline[-1] != timeline[-1]):
+        display_timeline = [*display_timeline, timeline[-1]]
     return {
         "strategy": strategy,
         "months": months,
@@ -96,6 +105,8 @@ def payoff_plan(
         "monthly_budget": round(budget, 2),
         "order": [active[i]["name"] for i in order],
         "payoff_month": payoff_month,
+        "timeline": display_timeline,
+        "timeline_truncated": truncated,
         "converged": converged,
     }
 
