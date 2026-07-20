@@ -40,7 +40,7 @@ def payoff_plan(
         return {
             "strategy": strategy, "months": 0, "duration": "0 months",
             "total_interest": 0.0, "total_paid": 0.0, "order": [],
-            "payoff_month": {}, "converged": True,
+            "payoff_month": {}, "timeline": [], "converged": True,
         }
 
     order = _order([Debt(a["name"], a["balance"], a["apr"], a["min"]) for a in active], strategy)
@@ -49,9 +49,11 @@ def payoff_plan(
     total_interest = 0.0
     total_paid = 0.0
     payoff_month: dict[str, int] = {}
+    timeline: list[float] = []
     months = 0
 
     while any(a["balance"] > 0.005 for a in active) and months < _MAX_MONTHS:
+        timeline.append(round(sum(max(a["balance"], 0) for a in active), 2))
         months += 1
         # Accrue interest.
         for a in active:
@@ -87,6 +89,8 @@ def payoff_plan(
                 payoff_month[a["name"]] = months
 
     converged = all(a["balance"] <= 0.005 for a in active)
+    if timeline and timeline[-1] > 0.005:
+        timeline.append(0.0)
     return {
         "strategy": strategy,
         "months": months,
@@ -96,6 +100,7 @@ def payoff_plan(
         "monthly_budget": round(budget, 2),
         "order": [active[i]["name"] for i in order],
         "payoff_month": payoff_month,
+        "timeline": timeline,
         "converged": converged,
     }
 
