@@ -11,11 +11,17 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! python3 -c "import venv" 2>/dev/null; then
-  echo "python3-venv is required (e.g. sudo apt-get install -y python3-venv)" >&2
-  exit 1
+if ! python3 -m ensurepip --version >/dev/null 2>&1; then
+  if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update -qq
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv
+  else
+    echo "python3-venv is required (ensurepip missing)" >&2
+    exit 1
+  fi
 fi
 
+rm -rf .venv
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
