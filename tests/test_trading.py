@@ -456,6 +456,48 @@ def test_robinhood_place_order_blocked_when_not_live():
         raise AssertionError("expected live-disabled RobinhoodError")
 
 
+# ---------- robinhood MCP live-execution adapter ----------
+def test_robinhood_mcp_env_gating_and_tool_overrides():
+    from gary.trading import RobinhoodMcpBroker
+
+    assert RobinhoodMcpBroker.from_env(env={}) is None  # no token -> not configured
+    broker = RobinhoodMcpBroker.from_env(env={
+        "ROBINHOOD_MCP_TOKEN": "tok", "TRADING_LIVE": "1",
+        "ROBINHOOD_MCP_TOOL_PLACE_ORDER": "submit_order",
+    })
+    assert broker is not None
+    assert broker.live_enabled is True
+    assert broker.tools["place_order"] == "submit_order"  # env override applied
+    assert broker.url.endswith("/mcp/trading")
+
+
+def test_robinhood_mcp_routes_orders_through_caller():
+    from gary.trading import RobinhoodMcpBroker
+
+    calls = []
+    broker = RobinhoodMcpBroker(token="tok", live_enabled=True,
+                                caller=lambda tool, args: calls.append((tool, args)) or {"id": "1"})
+    fill = broker.buy("BTC-USD", 1000.0, 100.0, on="d1")  # $1000 @ $100 -> qty 10
+    assert fill.side == "buy" and fill.quantity == 10.0
+    assert calls[-1][0] == "place_order"
+    assert calls[-1][1]["side"] == "buy" and calls[-1][1]["quantity"] == 10.0
+    broker.sell("BTC-USD", 3.0, 120.0, on="d2")
+    assert calls[-1][1] == {"symbol": "BTC-USD", "side": "sell", "type": "market", "quantity": 3.0}
+
+
+def test_robinhood_mcp_refuses_orders_when_not_live():
+    from gary.trading import RobinhoodMcpBroker
+    from gary.trading.robinhood_mcp import RobinhoodMcpError
+
+    broker = RobinhoodMcpBroker(token="tok", live_enabled=False, caller=lambda t, a: {})
+    try:
+        broker.buy("BTC-USD", 100.0, 100.0)
+    except RobinhoodMcpError as exc:
+        assert "TRADING_LIVE" in str(exc)
+    else:
+        raise AssertionError("expected RobinhoodMcpError when not live")
+
+
 # ---------- API ----------
 def test_api_trading_run_and_status(tmp_path, monkeypatch):
     monkeypatch.setenv("GARY_TRADING_FILE", str(tmp_path / "trading.json"))

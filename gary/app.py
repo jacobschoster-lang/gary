@@ -42,7 +42,14 @@ from gary.pipeline import ContentPipeline
 from gary.realestate import search_listings
 from gary.render import render_story
 from gary.render.preview_cache import get_or_render
-from gary.trading import BotConfig, RobinhoodCryptoBroker, TradingBot, TradingStore, optimize
+from gary.trading import (
+    BotConfig,
+    RobinhoodCryptoBroker,
+    RobinhoodMcpBroker,
+    TradingBot,
+    TradingStore,
+    optimize,
+)
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -423,8 +430,11 @@ def trading_status() -> dict[str, Any]:
     bot = TradingBot(config=config, broker=broker)
     payload = bot.status()
     live = RobinhoodCryptoBroker.from_env()
+    mcp = RobinhoodMcpBroker.from_env()
     payload["robinhood_configured"] = live is not None
-    payload["live_trading_enabled"] = bool(live and live.live_enabled)
+    payload["robinhood_mcp_configured"] = mcp is not None
+    live_on = bool((live and live.live_enabled) or (mcp and mcp.live_enabled))
+    payload["live_trading_enabled"] = live_on
     payload["mode"] = "paper"
     payload["has_run"] = trading_store.exists()
     payload["forward_equity"] = trading_store.equity_history()

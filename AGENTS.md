@@ -122,6 +122,17 @@ Trading bot (paper):
  `/api/trading/status` as `forward_equity`). `python -m gary.jobs.trade_daily`
  runs one forward step for a scheduler (paper-only, safe; writes a manifest to
  `out/`). It never sends real orders.
+- Live via Robinhood MCP (`gary/trading/robinhood_mcp.py`, preferred live path):
+ `RobinhoodMcpBroker` routes the bot's orders to Robinhood's official MCP trading
+ server (`https://agent.robinhood.com/mcp/trading`) as tool calls. It implements
+ the same `Broker` surface as `PaperBroker`, is gated on `ROBINHOOD_MCP_TOKEN` +
+ `TRADING_LIVE=1`, and takes an **injectable `caller(tool, args)`** (tests use a
+ fake; a real run uses the built-in JSON-RPC-over-HTTP client, or a caller that
+ forwards to Cursor's `CallMcpTool`). Tool names are placeholders overridable via
+ `ROBINHOOD_MCP_TOOL_*` — **confirm them with `GetMcpTools` after the MCP server
+ is added + authenticated** (cloud agents need it authenticated in the Cursor
+ desktop IDE; only `cursor-cloud` MCP is present by default). Engine→live routing
+ is still not wired; the bot stays on `PaperBroker` until deliberately switched.
 - Live crypto seam (`gary/trading/robinhood.py`): builds + Ed25519-signs official
  Robinhood Crypto requests via an **injectable signer** (no hard crypto dep;
  `default_ed25519_signer` uses `cryptography`/`PyNaCl` if installed). Request/
