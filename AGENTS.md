@@ -91,12 +91,24 @@ Trading bot (paper):
 - `POST /api/trading/run` runs a from-scratch backtest over the last N days and
  persists the resulting account to `finance_data/trading.json` (gitignored;
  override with `GARY_TRADING_FILE`).
-- `POST /api/trading/optimize` (`gary/trading/optimize.py`) grid-searches the
- tunable `BotConfig` knobs (exit style incl. trailing stops, position size,
- add-ons/pyramiding, entry sensitivity), scores each by drawdown-adjusted final
- equity, then applies + persists the best config. It fetches each symbol's
- price series once and reuses it across all candidates (don't re-fetch per
- candidate). Backtests are deterministic offline, so the optimizer is too.
+- Realism: fills include transaction cost + slippage (`fee_bps`/`slippage_bps`
+ on `BotConfig`/`PaperBroker`; realized P&L is net of round-trip costs), and the
+ engine uses **next-bar-open execution** — `TradingBot._run` decides on closes
+ strictly before the fill bar to avoid look-ahead bias. Bare `PaperBroker()`
+ defaults costs to 0 so direct unit tests stay exact; the engine wires in
+ `BotConfig` costs.
+- `gary/trading/metrics.py` holds pure metric functions (Sharpe, Sortino,
+ Calmar, win rate, profit factor, turnover, drawdown); every report embeds a
+ `metrics` block via `metrics.summarize(equity_series, fills)`.
+- `POST /api/trading/optimize` (`gary/trading/optimize.py`) is **walk-forward**:
+ it grid-searches the tunable knobs (exit style incl. trailing stops, position
+ size, add-ons, entry sensitivity) on a *train* window using a risk-adjusted
+ (Sharpe) objective, then reports honest *out-of-sample* results on a later
+ window plus a buy-and-hold benchmark and an overfit gap. It fetches each
+ symbol's series once and reuses it across all candidates and both windows.
+ Deterministic offline. Expect OOS to be much lower than in-sample — the
+ defaults overfit and often lose to buy-and-hold, which is the point of showing
+ it.
 - Prices come from `gary/trading/prices.py` (Yahoo/CoinGecko via
  `gary.data.http`) with a **deterministic synthetic fallback** seeded per
  symbol, so simulations run offline and tests are reproducible (the offline
