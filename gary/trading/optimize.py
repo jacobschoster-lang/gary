@@ -29,7 +29,7 @@ from gary.trading.models import BotConfig
 def candidate_configs(base: BotConfig) -> list[BotConfig]:
     """Grid over selection mode (incl. long/short), exit, sizing, and turnover."""
     grid: list[BotConfig] = []
-    for sel in ("per_symbol", "cross_sectional", "long_short"):
+    for sel in ("per_symbol", "cross_sectional", "long_short", "buy_hold"):
         for exit_mode in ({"trailing_stop_pct": 0.0, "take_profit_pct": 0.30},
                           {"trailing_stop_pct": 0.15, "take_profit_pct": 5.0}):
             for size in (0.25, 0.50):

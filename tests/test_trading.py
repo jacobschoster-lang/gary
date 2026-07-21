@@ -361,7 +361,7 @@ def test_low_turnover_reduces_trade_count():
 def test_optimizer_purged_walk_forward_with_selection_and_mc():
     r1 = optimize(BotConfig(), days=25, folds=3, use_live=False)
     r2 = optimize(BotConfig(), days=25, folds=3, use_live=False)
-    assert r1["tried"] == 24
+    assert r1["tried"] == 32
     assert r1["folds"] == 3
     assert r1["embargo"] == 3
     assert len(r1["folds_detail"]) == 3
@@ -376,6 +376,40 @@ def test_optimizer_purged_walk_forward_with_selection_and_mc():
     assert board and "robustness" in board[0] and "test_return_pct" in board[0]
 
 
+# ---------- smart buy & hold + forward stepping ----------
+def test_buy_hold_holds_the_universe():
+    cfg = BotConfig(selection_mode="buy_hold", universe=["NVDA", "AAPL", "MSFT"])
+    r = TradingBot(cfg, use_live=False).simulate(30)
+    held = {p["symbol"] for p in r["account"]["positions"]}
+    assert held  # holds names rather than sitting in cash
+    assert all(p["quantity"] > 0 for p in r["account"]["positions"])  # long-only
+
+
+def test_step_live_mutates_persisted_account_and_records_equity(tmp_path):
+    store = TradingStore(path=tmp_path / "trading.json")
+    cfg = BotConfig(selection_mode="cross_sectional")
+    bot = TradingBot(cfg, use_live=False)
+    result = bot.step_live()
+    assert "equity" in result and result["equity"] > 0
+    store.save(cfg, bot.broker)
+    hist = store.record_equity(result["date"], result["equity"])
+    assert len(hist) == 1
+    # Same-day record de-dupes.
+    hist = store.record_equity(result["date"], result["equity"] + 10)
+    assert len(hist) == 1 and store.equity_history()[0]["equity"] == result["equity"] + 10
+
+
+def test_trade_daily_job_paper_and_safe(tmp_path, monkeypatch):
+    from gary.jobs.trade_daily import run_once
+
+    store = TradingStore(path=tmp_path / "trading.json")
+    summary = run_once(store=store, use_live=False)
+    assert summary["mode"] == "paper"
+    assert summary["live_broker_configured"] is False  # no keys in test env
+    assert summary["equity_history_points"] == 1
+    assert "actions" in summary
+
+
 # ---------- robinhood seam ----------
 def test_robinhood_env_gating():
     assert RobinhoodCryptoBroker.from_env(env={}) is None
@@ -383,6 +417,43 @@ def test_robinhood_env_gating():
         env={"ROBINHOOD_API_KEY": "k", "ROBINHOOD_PRIVATE_KEY": "p"}
     )
     assert broker is not None and broker.live_enabled is False
+
+
+def test_robinhood_request_signing_is_deterministic():
+    from gary.trading.robinhood import RobinhoodError, canonical_message
+
+    signed = []
+    broker = RobinhoodCryptoBroker(
+        api_key="mykey", private_key_b64="x", live_enabled=True,
+        signer=lambda m: (signed.append(m) or "SIG"),
+    )
+    req = broker.prepare_order("BTC-USD", "buy", 0.5, timestamp=1700000000)
+    assert req["headers"]["x-api-key"] == "mykey"
+    assert req["headers"]["x-signature"] == "SIG"
+    assert req["headers"]["x-timestamp"] == "1700000000"
+    # The signed message is exactly the canonical string over the request.
+    assert signed[0] == canonical_message("mykey", "1700000000", req["url"].split(".com")[1],
+                                          "POST", req["body"])
+    # Live send refuses without a transport, and paper stays default elsewhere.
+    try:
+        broker.place_order("BTC-USD", "buy", 0.5)
+    except RobinhoodError as exc:
+        assert "transport" in str(exc)
+    else:
+        raise AssertionError("expected RobinhoodError without transport")
+
+
+def test_robinhood_place_order_blocked_when_not_live():
+    from gary.trading.robinhood import RobinhoodError
+
+    broker = RobinhoodCryptoBroker(api_key="k", private_key_b64="p", live_enabled=False,
+                                   signer=lambda m: "SIG")
+    try:
+        broker.place_order("BTC-USD", "buy", 1.0, transport=lambda r: {})
+    except RobinhoodError as exc:
+        assert "TRADING_LIVE" in str(exc)
+    else:
+        raise AssertionError("expected live-disabled RobinhoodError")
 
 
 # ---------- API ----------
@@ -418,7 +489,7 @@ def test_api_trading_optimize(tmp_path, monkeypatch):
     body = resp.json()
     assert "optimization" in body
     opt = body["optimization"]
-    assert opt["tried"] == 24
+    assert opt["tried"] == 32
     assert "out_of_sample" in opt and "benchmark" in opt and "monte_carlo" in opt
     assert "selection" in opt
     assert len(opt["leaderboard"]) >= 1

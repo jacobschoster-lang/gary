@@ -728,6 +728,7 @@ function renderTrading(data) {
   const selNames = {
     cross_sectional: `cross-sectional top-${cfg.top_n_positions}`,
     long_short: `long/short ${cfg.top_n_positions}×2 (market-neutral)`,
+    buy_hold: 'smart buy & hold (regime-filtered)',
     per_symbol: 'per-symbol',
   };
   const sel = selNames[cfg.selection_mode] || 'per-symbol';
@@ -863,7 +864,7 @@ function renderOptimization(opt) {
     return `<tr style="border-top:1px solid ${GRID};${i === 0 ? 'font-weight:700;' : ''}">
       <td style="padding:6px 8px;">${i + 1}</td>
       <td style="padding:6px 8px;">${esc(p.exit)}</td>
-      <td style="padding:6px 8px;">${esc({cross_sectional: 'cross-sec', long_short: 'long/short', per_symbol: 'per-symbol'}[p.selection] || p.selection)}</td>
+      <td style="padding:6px 8px;">${esc({cross_sectional: 'cross-sec', long_short: 'long/short', buy_hold: 'buy&hold', per_symbol: 'per-symbol'}[p.selection] || p.selection)}</td>
       <td style="padding:6px 8px;">${((p.max_position_pct || 0) * 100).toFixed(0)}%</td>
       <td style="padding:6px 8px;color:${(r.train_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.train_return_pct)}</td>
       <td style="padding:6px 8px;color:${(r.test_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.test_return_pct)}</td>

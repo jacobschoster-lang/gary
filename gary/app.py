@@ -422,9 +422,12 @@ def trading_status() -> dict[str, Any]:
     config, broker = trading_store.load()
     bot = TradingBot(config=config, broker=broker)
     payload = bot.status()
-    payload["robinhood_configured"] = RobinhoodCryptoBroker.from_env() is not None
+    live = RobinhoodCryptoBroker.from_env()
+    payload["robinhood_configured"] = live is not None
+    payload["live_trading_enabled"] = bool(live and live.live_enabled)
     payload["mode"] = "paper"
     payload["has_run"] = trading_store.exists()
+    payload["forward_equity"] = trading_store.equity_history()
     return payload
 
 

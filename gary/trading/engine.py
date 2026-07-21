@@ -107,6 +107,8 @@ class TradingBot:
                 self._long_short_entries(history, prices, on, equity, exited, actions)
             elif cfg.selection_mode == "cross_sectional":
                 self._cross_sectional_entries(history, prices, on, equity, exited, actions)
+            elif cfg.selection_mode == "buy_hold":
+                self._buy_hold_entries(history, prices, on, equity, exited, actions)
             else:
                 self._per_symbol_entries(history, prices, on, equity, exited, actions)
         return actions
@@ -212,6 +214,8 @@ class TradingBot:
         # Equal-weight (capped) allocation into the target names.
         cap_fraction = min(cfg.max_position_pct, 1.0 / max(1, cfg.top_n_positions))
         for sym in target:
+            if sym in exited:
+                continue  # don't re-enter a name we just closed this tick
             hist = history[sym]
             price = prices.get(sym, hist[-1])
             held = self.broker.positions.get(sym)
@@ -222,6 +226,35 @@ class TradingBot:
                 vol_target=cfg.vol_target,
             )
             self._buy(sym, notional, price, on, "cross-sectional momentum top-N", actions)
+
+    def _buy_hold_entries(self, history, prices, on, equity, exited, actions) -> None:
+        """Smart buy-and-hold: hold the whole (regime-eligible) universe, equal or
+        vol-weighted, rebalanced infrequently. Only steps aside names that fall
+        below the regime filter — the honest low-effort baseline."""
+        cfg = self.config
+        eligible = [
+            s for s in cfg.universe
+            if history.get(s) and (cfg.regime_ma <= 0 or above_regime(history[s], cfg.regime_ma))
+        ]
+        eligible_set = set(eligible)
+        for sym in list(self.broker.positions):
+            if sym in exited or sym in eligible_set:
+                continue
+            pos = self.broker.positions[sym]
+            self._close(sym, prices.get(sym, pos.avg_cost), on, "buy&hold: below regime", actions)
+        cap_fraction = min(cfg.max_position_pct, 1.0 / max(1, len(eligible)))
+        for sym in eligible:
+            if sym in exited:
+                continue
+            hist = history[sym]
+            price = prices.get(sym, hist[-1])
+            held = self.broker.positions.get(sym)
+            existing = held.market_value(price) if held and held.quantity > 0 else 0.0
+            notional = risk.position_notional(
+                equity, self.broker.cash, cap_fraction, existing, strength=1.0,
+                asset_vol=risk.volatility(hist, cfg.vol_window), vol_target=cfg.vol_target,
+            )
+            self._buy(sym, notional, price, on, "buy & hold (regime-filtered)", actions)
 
     def _long_short_entries(self, history, prices, on, equity, exited, actions) -> None:
         """Market-neutral: long the top-N momentum names, short the bottom-N."""
@@ -259,6 +292,8 @@ class TradingBot:
         legs = max(1, cfg.top_n_positions * 2)
         cap_fraction = min(cfg.max_position_pct, 1.0 / legs)
         for sym in longs:
+            if sym in exited:
+                continue
             hist = history[sym]
             price = prices.get(sym, hist[-1])
             held = self.broker.positions.get(sym)
@@ -269,13 +304,14 @@ class TradingBot:
             )
             self._buy(sym, notional, price, on, "long-short: long top-N", actions)
         for sym in shorts:
+            if sym in exited:
+                continue
             hist = history[sym]
             price = prices.get(sym, hist[-1])
             held = self.broker.positions.get(sym)
             existing = abs(held.market_value(price)) if held and held.quantity < 0 else 0.0
-            # Short sizing uses cash proceeds; bound by the same per-leg cap on equity.
-            cap = equity * cap_fraction
-            notional = round(max(0.0, min(cap - existing, equity * cap_fraction)), 2)
+            # Short sizing uses cash proceeds; bound by the per-leg cap on equity.
+            notional = round(max(0.0, equity * cap_fraction - existing), 2)
             self._short(sym, notional, price, on, "long-short: short bottom-N", actions)
 
     WARMUP = 25  # floor for bars of history needed before the first trade
@@ -376,3 +412,21 @@ class TradingBot:
         for sym in self.broker.positions:
             prices.setdefault(sym, price_data.price_series(sym, 60, use_live=self.use_live)[-1])
         return self.report(curve=[], prices=prices, days=0)
+
+    def step_live(self) -> dict[str, Any]:
+        """Advance the *persisted* account one step using the latest prices.
+
+        Unlike ``simulate`` (a from-scratch backtest), this mutates the current
+        broker — it's the forward paper-trading path a scheduled job calls daily.
+        Decisions use the latest available closes and fill at the latest price.
+        """
+        cfg = self.config
+        n = self.warmup() + 2
+        series = {s: price_data.price_series(s, n, use_live=self.use_live) for s in cfg.universe}
+        prices = {s: v[-1] for s, v in series.items() if v}
+        on = date.today().isoformat()
+        self._ticks = 0  # force a rebalance decision on each live step
+        actions = self.run_tick(series, on, exec_prices=prices)
+        equity = round(self.broker.equity(prices), 2)
+        return {"date": on, "actions": actions, "equity": equity,
+                "account": self.broker.to_dict(prices)}

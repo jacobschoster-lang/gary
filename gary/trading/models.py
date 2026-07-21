@@ -50,13 +50,22 @@ class Position:
             return 0.0
         return (price - self.avg_cost) / self.avg_cost
 
+    def gain_pct(self, price: float) -> float:
+        """Directional gain %: positive when the position is profitable, so a
+        short that has fallen in price reads as a gain (not a loss)."""
+        basis = abs(self.quantity) * self.avg_cost
+        if basis <= 0:
+            return 0.0
+        return self.unrealized_pnl(price) / basis * 100
+
     def to_dict(self, price: float | None = None) -> dict[str, Any]:
         d = asdict(self)
+        d["side"] = "short" if self.quantity < 0 else "long"
         if price is not None:
             d["price"] = round(price, 6)
             d["market_value"] = round(self.market_value(price), 2)
             d["unrealized_pnl"] = round(self.unrealized_pnl(price), 2)
-            d["return_pct"] = round(self.return_pct(price) * 100, 2)
+            d["return_pct"] = round(self.gain_pct(price), 2)
         return d
 
 
