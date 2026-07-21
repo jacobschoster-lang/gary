@@ -91,6 +91,12 @@ Trading bot (paper):
 - `POST /api/trading/run` runs a from-scratch backtest over the last N days and
  persists the resulting account to `finance_data/trading.json` (gitignored;
  override with `GARY_TRADING_FILE`).
+- `POST /api/trading/optimize` (`gary/trading/optimize.py`) grid-searches the
+ tunable `BotConfig` knobs (exit style incl. trailing stops, position size,
+ add-ons/pyramiding, entry sensitivity), scores each by drawdown-adjusted final
+ equity, then applies + persists the best config. It fetches each symbol's
+ price series once and reuses it across all candidates (don't re-fetch per
+ candidate). Backtests are deterministic offline, so the optimizer is too.
 - Prices come from `gary/trading/prices.py` (Yahoo/CoinGecko via
  `gary.data.http`) with a **deterministic synthetic fallback** seeded per
  symbol, so simulations run offline and tests are reproducible (the offline
