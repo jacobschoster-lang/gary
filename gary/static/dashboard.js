@@ -795,8 +795,14 @@ function renderTrading(data) {
 }
 
 function colorPct(el, v) {
+  if (!el) return;
   el.textContent = pct(v);
   el.style.color = (v || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
 }
 
 function renderOptimization(opt) {
@@ -820,17 +826,19 @@ function renderOptimization(opt) {
   colorPct(document.getElementById('tb_opt_base'), is.return_pct);
   colorPct(document.getElementById('tb_opt_best'), oos.return_pct);
   colorPct(document.getElementById('tb_opt_impr'), bench.return_pct);
-  document.getElementById('tb_opt_dd').textContent = (oos.max_drawdown_pct || 0).toFixed(1) + '%';
+  setText('tb_opt_dd', (oos.max_drawdown_pct || 0).toFixed(1) + '%');
 
-  document.getElementById('tb_mc_goal').textContent = (mc.prob_reach_goal_pct || 0).toFixed(1) + '%';
+  setText('tb_mc_goal', (mc.prob_reach_goal_pct || 0).toFixed(1) + '%');
   const ruinEl = document.getElementById('tb_mc_ruin');
-  ruinEl.textContent = (mc.risk_of_ruin_pct || 0).toFixed(1) + '%';
-  ruinEl.style.color = (mc.risk_of_ruin_pct || 0) > 10 ? 'var(--red)' : 'var(--green)';
-  document.getElementById('tb_mc_median').textContent = money(mc.median_final_equity);
-  document.getElementById('tb_mc_range').textContent =
-    money(mc.p5_final_equity) + ' – ' + money(mc.p95_final_equity);
+  if (ruinEl) {
+    ruinEl.textContent = (mc.risk_of_ruin_pct || 0).toFixed(1) + '%';
+    ruinEl.style.color = (mc.risk_of_ruin_pct || 0) > 10 ? 'var(--red)' : 'var(--green)';
+  }
+  setText('tb_mc_median', money(mc.median_final_equity));
+  setText('tb_mc_range', money(mc.p5_final_equity) + ' – ' + money(mc.p95_final_equity));
 
-  document.getElementById('tb_folds').innerHTML = (opt.folds_detail || []).map(f => {
+  const foldsEl = document.getElementById('tb_folds');
+  if (foldsEl) foldsEl.innerHTML = (opt.folds_detail || []).map(f => {
     const p = f.params || {};
     return `Fold ${f.fold}: train ${pct(f.train_return_pct)} → ` +
       `<strong style="color:${(f.oos_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">OOS ${pct(f.oos_return_pct)}</strong> ` +
