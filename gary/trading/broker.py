@@ -111,6 +111,84 @@ class PaperBroker:
         self.fills.append(fill)
         return fill
 
+    def short(
+        self, symbol: str, notional: float, price: float, *, on: str = "", strategy: str = "",
+        reason: str = "",
+    ) -> Fill | None:
+        """Open/increase a short of ~``notional`` dollars, receiving proceeds."""
+        if notional <= 0 or price <= 0:
+            return None
+        eff_price = price * (1 - self.slippage_bps / 10_000)  # receive less when shorting
+        if eff_price <= 0:
+            return None
+        shares = notional / eff_price
+        gross = shares * eff_price
+        fee = gross * (self.fee_bps / 10_000)
+        self.cash += gross - fee
+        self.fees_paid += fee
+        pos = self.positions.get(symbol)
+        if pos is None or pos.quantity == 0:
+            self.positions[symbol] = Position(
+                symbol=symbol, quantity=-shares, avg_cost=eff_price,
+                opened_on=on, strategy=strategy,
+            )
+        else:
+            existing = abs(pos.quantity)
+            total = existing * pos.avg_cost + shares * eff_price
+            new_qty = existing + shares
+            pos.avg_cost = total / new_qty
+            pos.quantity = -new_qty
+        fill = Fill(
+            date=on, symbol=symbol, side="short", quantity=round(shares, 8),
+            price=round(eff_price, 6), notional=round(gross - fee, 2), strategy=strategy,
+            reason=reason,
+        )
+        self.fills.append(fill)
+        return fill
+
+    def cover(
+        self, symbol: str, quantity: float, price: float, *, on: str = "", strategy: str = "",
+        reason: str = "",
+    ) -> Fill | None:
+        """Buy back ``quantity`` shorted units at ``price`` and realize net P&L."""
+        pos = self.positions.get(symbol)
+        if pos is None or pos.quantity >= 0 or price <= 0:
+            return None
+        quantity = min(quantity, abs(pos.quantity))
+        if quantity <= 0:
+            return None
+        eff_price = price * (1 + self.slippage_bps / 10_000)  # pay up when buying back
+        cost = quantity * eff_price
+        fee = cost * (self.fee_bps / 10_000)
+        realized = quantity * (pos.avg_cost - eff_price) - fee  # profit when price fell
+        self.cash -= cost + fee
+        self.realized_pnl += realized
+        self.fees_paid += fee
+        pos.quantity += quantity
+        if abs(pos.quantity) <= 1e-9:
+            del self.positions[symbol]
+        fill = Fill(
+            date=on, symbol=symbol, side="cover", quantity=round(quantity, 8),
+            price=round(eff_price, 6), notional=round(cost, 2), strategy=strategy,
+            reason=reason, realized_pnl=round(realized, 2),
+        )
+        self.fills.append(fill)
+        return fill
+
+    def accrue_borrow(self, prices: dict[str, float], borrow_bps: float) -> float:
+        """Charge per-bar borrow cost on open short notional. Returns total charged."""
+        if borrow_bps <= 0:
+            return 0.0
+        total = 0.0
+        for sym, pos in self.positions.items():
+            if pos.quantity < 0:
+                notional = abs(pos.quantity) * prices.get(sym, pos.avg_cost)
+                total += notional * (borrow_bps / 10_000)
+        if total > 0:
+            self.cash -= total
+            self.fees_paid += total
+        return total
+
     def move_to_reserve(self, amount: float) -> float:
         """Shift free cash into the lower-risk reserve bucket."""
         amount = max(0.0, min(amount, self.cash))

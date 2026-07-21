@@ -313,21 +313,67 @@ def test_vol_targeting_sizes_smaller_for_higher_vol():
     assert position_notional(10_000, 10_000, 0.5, 0.0, strength=1.0) == 5000.0
 
 
-# ---------- rolling walk-forward optimizer ----------
-def test_optimizer_rolling_walk_forward_deterministic_with_mc():
+# ---------- shorting, long/short, low turnover ----------
+def test_short_and_cover_realizes_profit_when_price_falls():
+    b = PaperBroker(cash=1000.0)  # zero costs
+    b.short("X", 500.0, 100.0)  # short 5 @ 100 -> +500 proceeds
+    assert b.cash == 1500.0
+    assert b.positions["X"].quantity == -5.0
+    fill = b.cover("X", 5.0, 90.0)  # buy back at 90 -> +50 profit
+    assert fill.side == "cover"
+    assert fill.realized_pnl == 50.0
+    assert "X" not in b.positions
+    assert round(b.cash, 2) == 1050.0
+
+
+def test_short_loses_when_price_rises():
+    b = PaperBroker(cash=1000.0)
+    b.short("X", 500.0, 100.0)
+    fill = b.cover("X", 5.0, 120.0)  # price rose -> loss
+    assert fill.realized_pnl == -100.0
+
+
+def test_borrow_cost_charged_on_open_shorts():
+    b = PaperBroker(cash=1000.0)
+    b.short("X", 1000.0, 100.0)  # qty -10
+    before = b.cash
+    charged = b.accrue_borrow({"X": 100.0}, 10.0)  # 10 * 100 notional * 0.10%
+    assert round(charged, 4) == 1.0
+    assert round(b.cash, 4) == round(before - 1.0, 4)
+
+
+def test_long_short_mode_takes_both_legs():
+    cfg = BotConfig(selection_mode="long_short", top_n_positions=2)
+    r = TradingBot(cfg, use_live=False).simulate(40)
+    sides = {t["side"] for t in r["trades"]}
+    assert "short" in sides and "buy" in sides  # both legs traded
+
+
+def test_low_turnover_reduces_trade_count():
+    daily = TradingBot(BotConfig(selection_mode="cross_sectional", rebalance_every=1),
+                       use_live=False).simulate(40)
+    weekly = TradingBot(BotConfig(selection_mode="cross_sectional", rebalance_every=5),
+                        use_live=False).simulate(40)
+    assert weekly["num_trades"] < daily["num_trades"]
+
+
+# ---------- purged walk-forward + robust selection ----------
+def test_optimizer_purged_walk_forward_with_selection_and_mc():
     r1 = optimize(BotConfig(), days=25, folds=3, use_live=False)
     r2 = optimize(BotConfig(), days=25, folds=3, use_live=False)
-    assert r1["tried"] == 32
+    assert r1["tried"] == 24
     assert r1["folds"] == 3
+    assert r1["embargo"] == 3
     assert len(r1["folds_detail"]) == 3
     # Deterministic aggregate OOS.
     assert r1["out_of_sample"]["return_pct"] == r2["out_of_sample"]["return_pct"]
-    # Reports in-sample, OOS, benchmark, Monte Carlo, and a leaderboard.
-    assert "in_sample" in r1 and "out_of_sample" in r1 and "benchmark" in r1
-    assert "monte_carlo" in r1 and "prob_reach_goal_pct" in r1["monte_carlo"]
-    assert "aggregate" in r1 and "overfit_gap_pct" in r1
+    # Robust selection + deflated Sharpe are reported.
+    assert "selection" in r1 and "deflated_sharpe" in r1["selection"]
+    assert r1["selection"]["deflated_sharpe"] <= r1["selection"]["observed_sharpe"]
+    # Benchmark, Monte Carlo, and a robustness-ranked leaderboard.
+    assert "benchmark" in r1 and "monte_carlo" in r1
     board = r1["leaderboard"]
-    assert board and "train_return_pct" in board[0] and "test_return_pct" in board[0]
+    assert board and "robustness" in board[0] and "test_return_pct" in board[0]
 
 
 # ---------- robinhood seam ----------
@@ -372,8 +418,9 @@ def test_api_trading_optimize(tmp_path, monkeypatch):
     body = resp.json()
     assert "optimization" in body
     opt = body["optimization"]
-    assert opt["tried"] == 32
+    assert opt["tried"] == 24
     assert "out_of_sample" in opt and "benchmark" in opt and "monte_carlo" in opt
+    assert "selection" in opt
     assert len(opt["leaderboard"]) >= 1
     # The applied run carries the full metrics scorecard.
     assert "metrics" in body and "sharpe" in body["metrics"]

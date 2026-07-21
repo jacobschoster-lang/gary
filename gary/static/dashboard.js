@@ -725,12 +725,17 @@ function renderTrading(data) {
   const exit = (cfg.trailing_stop_pct || 0) > 0
     ? `trailing stop ${(cfg.trailing_stop_pct * 100).toFixed(0)}% (let winners run)`
     : `take-profit ${((cfg.take_profit_pct || 0) * 100).toFixed(0)}%`;
-  const sel = cfg.selection_mode === 'cross_sectional'
-    ? `cross-sectional top-${cfg.top_n_positions}` : 'per-symbol';
+  const selNames = {
+    cross_sectional: `cross-sectional top-${cfg.top_n_positions}`,
+    long_short: `long/short ${cfg.top_n_positions}×2 (market-neutral)`,
+    per_symbol: 'per-symbol',
+  };
+  const sel = selNames[cfg.selection_mode] || 'per-symbol';
+  const turnover = (cfg.rebalance_every || 1) > 1 ? `rebalance every ${cfg.rebalance_every}d` : 'daily rebalance';
   const regime = (cfg.regime_ma || 0) > 0 ? `${cfg.regime_ma}d regime filter` : 'no regime filter';
   const vt = (cfg.vol_target || 0) > 0 ? `vol target ${(cfg.vol_target * 100).toFixed(0)}%` : 'fixed sizing';
   document.getElementById('tb_active').textContent =
-    `Active strategy — ${sel} · ${regime} · ${vt} · exit: ${exit} · ` +
+    `Active strategy — ${sel} · ${turnover} · ${regime} · ${vt} · exit: ${exit} · ` +
     `stop-loss ${((cfg.stop_loss_pct || 0) * 100).toFixed(0)}% · ` +
     `max ${((cfg.max_position_pct || 0) * 100).toFixed(0)}%/position · ` +
     `reserve skim ${((cfg.rebalance_profit_pct || 0) * 100).toFixed(0)}%`;
@@ -813,15 +818,21 @@ function renderOptimization(opt) {
     return;
   }
   const is = opt.in_sample || {}, oos = opt.out_of_sample || {}, bench = opt.benchmark || {};
-  const agg = opt.aggregate || {}, mc = opt.monte_carlo || {};
+  const agg = opt.aggregate || {}, mc = opt.monte_carlo || {}, selInfo = opt.selection || {};
+  const selLine = selInfo.deflated_sharpe != null
+    ? `<div style="margin-top:6px;">Robust pick (train mean − stdev). Sharpe deflated for ` +
+      `${selInfo.n_trials} trials: <strong>${(selInfo.observed_sharpe || 0).toFixed(2)} → ` +
+      `${(selInfo.deflated_sharpe || 0).toFixed(2)}</strong> · purge/embargo: ${opt.embargo || 0} bars.</div>`
+    : '';
   document.getElementById('tb_optim_summary').innerHTML =
-    `Rolling walk-forward: ${opt.folds} folds, tuned on ${opt.train_days} train days ` +
-    `(objective: ${esc(opt.objective || 'sharpe')}), each reported on ${opt.test_days} ` +
+    `Purged rolling walk-forward: ${opt.folds} folds, tuned on ${opt.train_days} train days ` +
+    `(objective: ${esc(opt.objective || 'robustness')}), each reported on ${opt.test_days} ` +
     `<strong>out-of-sample</strong> days across ${opt.tried} configs. ` +
     `The applied stats above reflect the most recent window; the numbers below are the honest OOS test.` +
     `<div style="margin-top:6px;">OOS positive in <strong>${agg.folds_positive || 0}/${opt.folds}</strong> folds · ` +
     `beats buy &amp; hold in <strong>${agg.folds_beating_benchmark || 0}/${opt.folds}</strong> · ` +
-    `overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>`;
+    `overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>` +
+    selLine;
 
   colorPct(document.getElementById('tb_opt_base'), is.return_pct);
   colorPct(document.getElementById('tb_opt_best'), oos.return_pct);
@@ -852,7 +863,7 @@ function renderOptimization(opt) {
     return `<tr style="border-top:1px solid ${GRID};${i === 0 ? 'font-weight:700;' : ''}">
       <td style="padding:6px 8px;">${i + 1}</td>
       <td style="padding:6px 8px;">${esc(p.exit)}</td>
-      <td style="padding:6px 8px;">${esc(p.selection === 'cross_sectional' ? 'cross-sec' : 'per-symbol')}</td>
+      <td style="padding:6px 8px;">${esc({cross_sectional: 'cross-sec', long_short: 'long/short', per_symbol: 'per-symbol'}[p.selection] || p.selection)}</td>
       <td style="padding:6px 8px;">${((p.max_position_pct || 0) * 100).toFixed(0)}%</td>
       <td style="padding:6px 8px;color:${(r.train_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.train_return_pct)}</td>
       <td style="padding:6px 8px;color:${(r.test_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.test_return_pct)}</td>

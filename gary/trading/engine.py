@@ -42,6 +42,7 @@ class TradingBot:
         self.config = config or BotConfig()
         self.broker = broker or PaperBroker(cash=self.config.starting_cash)
         self.use_live = use_live
+        self._ticks = 0  # bar counter, for the low-turnover rebalance gate
 
     # -- one step -------------------------------------------------------------
     def run_tick(
@@ -61,64 +62,91 @@ class TradingBot:
         actions: list[dict[str, Any]] = []
         exited: set[str] = set()  # don't re-enter a name we just closed this tick
 
-        # 1 + 2) manage exits on open risk positions (take-profit/trailing/stop).
+        # 0) borrow cost on any open shorts (charged every bar).
+        self.broker.accrue_borrow(prices, cfg.borrow_bps)
+
+        # 1 + 2) manage exits on open risk positions (take-profit/trailing/stop),
+        # direction-aware so shorts exit on the mirror-image move.
         for sym, pos in list(self.broker.positions.items()):
             price = prices.get(sym, pos.avg_cost)
+            long = pos.quantity > 0
             ret = pos.return_pct(price)
+            gain = ret if long else -ret  # fractional gain of the position
             reason = None
-            if cfg.trailing_stop_pct > 0:
-                # Let winners run: arm a trailing stop once the position has been
-                # in profit, exiting only on a pullback from the peak.
+            if long and cfg.trailing_stop_pct > 0:
                 pos.peak_price = max(pos.peak_price or pos.avg_cost, price)
                 if pos.peak_price > pos.avg_cost:
                     drop = (pos.peak_price - price) / pos.peak_price
                     if drop >= cfg.trailing_stop_pct:
-                        reason = f"trailing-stop +{ret * 100:.1f}% ({drop * 100:.1f}% off peak)"
-            elif risk.should_take_profit(ret, cfg.take_profit_pct):
-                reason = f"take-profit +{ret * 100:.1f}%"
-            if reason is None and risk.should_stop_loss(ret, cfg.stop_loss_pct):
-                reason = f"stop-loss {ret * 100:.1f}%"
+                        reason = f"trailing-stop +{gain * 100:.1f}% ({drop * 100:.1f}% off peak)"
+            elif gain >= cfg.take_profit_pct:
+                reason = f"take-profit +{gain * 100:.1f}%"
+            if reason is None and gain <= -abs(cfg.stop_loss_pct):
+                reason = f"stop-loss {gain * 100:.1f}%"
             if reason is None:
                 continue
             if self._close(sym, price, on, reason, actions):
                 exited.add(sym)
 
-        # 1c) regime exits: drop anything that has fallen below its trend filter.
+        # 1c) regime exits: drop LONGs that have fallen below their trend filter.
         if cfg.regime_ma > 0:
             for sym, pos in list(self.broker.positions.items()):
-                if sym in exited:
+                if sym in exited or pos.quantity < 0:
                     continue
                 if not above_regime(history.get(sym) or [], cfg.regime_ma):
                     price = prices.get(sym, pos.avg_cost)
                     if self._close(sym, price, on, f"regime exit (<{cfg.regime_ma}d MA)", actions):
                         exited.add(sym)
 
-        # 3) entries.
-        equity = self.broker.equity(prices)
-        if cfg.selection_mode == "cross_sectional":
-            self._cross_sectional_entries(history, prices, on, equity, exited, actions)
-        else:
-            self._per_symbol_entries(history, prices, on, equity, exited, actions)
+        # 3) entries — only on rebalance bars (low-turnover gate).
+        rebalance = self._ticks % max(1, cfg.rebalance_every) == 0
+        self._ticks += 1
+        if rebalance:
+            equity = self.broker.equity(prices)
+            if cfg.selection_mode == "long_short":
+                self._long_short_entries(history, prices, on, equity, exited, actions)
+            elif cfg.selection_mode == "cross_sectional":
+                self._cross_sectional_entries(history, prices, on, equity, exited, actions)
+            else:
+                self._per_symbol_entries(history, prices, on, equity, exited, actions)
         return actions
 
     def _close(
         self, sym: str, price: float, on: str, reason: str, actions: list[dict[str, Any]]
     ) -> bool:
-        """Fully sell a position, skim profit to the reserve, and log the action."""
+        """Fully close a position (sell if long, cover if short), skim, and log."""
         pos = self.broker.positions.get(sym)
         if pos is None:
             return False
-        fill = self.broker.sell(
-            sym, pos.quantity, price, on=on, strategy=pos.strategy, reason=reason
-        )
+        if pos.quantity > 0:
+            fill = self.broker.sell(
+                sym, pos.quantity, price, on=on, strategy=pos.strategy, reason=reason
+            )
+            side = "sell"
+        else:
+            fill = self.broker.cover(
+                sym, abs(pos.quantity), price, on=on, strategy=pos.strategy, reason=reason
+            )
+            side = "cover"
         if fill is None:
             return False
-        act = {"action": "sell", "symbol": sym, "reason": reason, "realized_pnl": fill.realized_pnl}
+        act = {"action": side, "symbol": sym, "reason": reason, "realized_pnl": fill.realized_pnl}
         skim = risk.rebalance_amount(fill.realized_pnl, self.config.rebalance_profit_pct)
         if skim > 0:
             act["rebalanced_to_reserve"] = round(self.broker.move_to_reserve(skim), 2)
         actions.append(act)
         return True
+
+    def _short(
+        self, sym: str, notional: float, price: float, on: str, why: str,
+        actions: list[dict[str, Any]],
+    ) -> None:
+        if notional < 1.0:
+            return
+        fill = self.broker.short(sym, notional, price, on=on, strategy="blend", reason=why)
+        if fill:
+            actions.append({"action": "short", "symbol": sym, "notional": fill.notional,
+                            "reason": why})
 
     def _buy(
         self, sym: str, notional: float, price: float, on: str, why: str,
@@ -195,6 +223,61 @@ class TradingBot:
             )
             self._buy(sym, notional, price, on, "cross-sectional momentum top-N", actions)
 
+    def _long_short_entries(self, history, prices, on, equity, exited, actions) -> None:
+        """Market-neutral: long the top-N momentum names, short the bottom-N."""
+        cfg = self.config
+        scores: dict[str, float] = {}
+        for sym in cfg.universe:
+            hist = history.get(sym)
+            if hist:
+                scores[sym] = momentum_score(hist, cfg.momentum_lookback)
+        ranked = sorted(scores, key=lambda s: scores[s], reverse=True)
+        # Longs: positive momentum (and in regime if enabled). Shorts: negative.
+        longs, shorts = [], []
+        for sym in ranked:
+            in_regime = cfg.regime_ma <= 0 or above_regime(history[sym], cfg.regime_ma)
+            if scores[sym] > 0 and in_regime:
+                longs.append(sym)
+        for sym in reversed(ranked):
+            if scores[sym] < 0:
+                shorts.append(sym)
+        longs = longs[: cfg.top_n_positions]
+        shorts = shorts[: cfg.top_n_positions]
+        long_set, short_set = set(longs), set(shorts)
+
+        # Rotate: close longs no longer wanted; cover shorts no longer wanted.
+        for sym in list(self.broker.positions):
+            if sym in exited:
+                continue
+            pos = self.broker.positions[sym]
+            if pos.quantity > 0 and sym not in long_set:
+                self._close(sym, prices.get(sym, pos.avg_cost), on, "rotate (long)", actions)
+            elif pos.quantity < 0 and sym not in short_set:
+                self._close(sym, prices.get(sym, pos.avg_cost), on, "rotate (short)", actions)
+
+        # Split capital across both legs; equal-weight, volatility-scaled if set.
+        legs = max(1, cfg.top_n_positions * 2)
+        cap_fraction = min(cfg.max_position_pct, 1.0 / legs)
+        for sym in longs:
+            hist = history[sym]
+            price = prices.get(sym, hist[-1])
+            held = self.broker.positions.get(sym)
+            existing = held.market_value(price) if held and held.quantity > 0 else 0.0
+            notional = risk.position_notional(
+                equity, self.broker.cash, cap_fraction, existing, strength=1.0,
+                asset_vol=risk.volatility(hist, cfg.vol_window), vol_target=cfg.vol_target,
+            )
+            self._buy(sym, notional, price, on, "long-short: long top-N", actions)
+        for sym in shorts:
+            hist = history[sym]
+            price = prices.get(sym, hist[-1])
+            held = self.broker.positions.get(sym)
+            existing = abs(held.market_value(price)) if held and held.quantity < 0 else 0.0
+            # Short sizing uses cash proceeds; bound by the same per-leg cap on equity.
+            cap = equity * cap_fraction
+            notional = round(max(0.0, min(cap - existing, equity * cap_fraction)), 2)
+            self._short(sym, notional, price, on, "long-short: short bottom-N", actions)
+
     WARMUP = 25  # floor for bars of history needed before the first trade
 
     def warmup(self) -> int:
@@ -219,6 +302,7 @@ class TradingBot:
         self.broker = PaperBroker(
             cash=cfg.starting_cash, fee_bps=cfg.fee_bps, slippage_bps=cfg.slippage_bps
         )
+        self._ticks = 0
         length = min((len(v) for v in series.values()), default=0)
         today = date.today()
         curve: list[dict[str, Any]] = []

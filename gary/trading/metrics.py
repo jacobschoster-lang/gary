@@ -121,9 +121,10 @@ def calmar(equity: list[float], periods_per_year: int = 252) -> float:
 def trade_stats(fills: list[dict]) -> dict:
     """Realized-trade statistics from a list of fill dicts.
 
-    Only fills with ``side == 'sell'`` carry realized P&L in ``realized_pnl``.
+    Closing fills (``side`` in ``{'sell', 'cover'}``) carry realized P&L in
+    ``realized_pnl``; ``'sell'`` closes longs and ``'cover'`` closes shorts.
     """
-    sells = [f for f in fills if f.get("side") == "sell"]
+    sells = [f for f in fills if f.get("side") in ("sell", "cover")]
     closed = len(sells)
     win_pnls = [float(f.get("realized_pnl", 0.0)) for f in sells if f.get("realized_pnl", 0.0) > 0]
     loss_pnls = [float(f.get("realized_pnl", 0.0)) for f in sells if f.get("realized_pnl", 0.0) < 0]

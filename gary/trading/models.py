@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
 
-Action = Literal["buy", "sell", "hold"]
+Action = Literal["buy", "sell", "hold", "short", "cover"]
 
 
 @dataclass
@@ -107,12 +107,15 @@ class BotConfig:
 
     # --- portfolio construction -------------------------------------------
     # "per_symbol": trade each name on its own blended signal (original behavior).
-    # "cross_sectional": rank the universe by momentum and hold the top N.
+    # "cross_sectional": rank the universe by momentum, hold the top N (long-only).
+    # "long_short": long the top N and short the bottom N (market-neutral).
     selection_mode: str = "per_symbol"
-    top_n_positions: int = 3  # how many names to hold in cross-sectional mode
+    top_n_positions: int = 3  # names held per side (both long and short legs)
     regime_ma: int = 0  # >0: only hold names above this moving average (trend filter)
     vol_target: float = 0.0  # >0: size inversely to volatility toward this annual vol
     vol_window: int = 20  # lookback for the volatility estimate
+    borrow_bps: float = 5.0  # per-bar borrow cost charged on short notional
+    rebalance_every: int = 1  # rebalance/rotate only every N bars (1 = daily)
 
     # --- tunable knobs (optimizer searches over these) --------------------
     trailing_stop_pct: float = 0.0  # >0 lets winners run: exit on drop from peak
@@ -166,6 +169,8 @@ class BotConfig:
             regime_ma=num("regime_ma", base.regime_ma, int),
             vol_target=num("vol_target", base.vol_target),
             vol_window=num("vol_window", base.vol_window, int),
+            borrow_bps=num("borrow_bps", base.borrow_bps),
+            rebalance_every=num("rebalance_every", base.rebalance_every, int),
             trailing_stop_pct=num("trailing_stop_pct", base.trailing_stop_pct),
             allow_add_ons=bool(
                 data["allow_add_ons"]
