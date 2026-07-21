@@ -221,9 +221,34 @@
             <input id="tb_days" type="number" value="30" min="1" max="365" />
           </div>
           <button id="btn_run_bot" type="button" class="btn-green">Run paper bot</button>
+          <button id="btn_optimize_bot" type="button" class="btn-purple">Optimize strategy</button>
           <button id="btn_reset_bot" type="button" class="btn-gray">Reset to $10k</button>
         </div>
-        <div class="muted" id="tb_meta" style="margin-top:8px;font-size:12px;"></div>
+        <div class="muted" id="tb_active" style="margin-top:8px;font-size:12px;"></div>
+        <div class="muted" id="tb_meta" style="margin-top:4px;font-size:12px;"></div>
+      </div>
+
+      <div id="tb_optim" class="card" style="display:none;background:var(--panel-2);">
+        <h2>Optimization result</h2>
+        <div id="tb_optim_summary" class="muted"></div>
+        <div class="stats" style="margin-top:10px;">
+          <div class="stat"><div class="k">Baseline return</div><div class="v" id="tb_opt_base">—</div></div>
+          <div class="stat"><div class="k">Optimized return</div><div class="v" id="tb_opt_best">—</div></div>
+          <div class="stat"><div class="k">Improvement</div><div class="v" id="tb_opt_impr">—</div></div>
+          <div class="stat"><div class="k">Max drawdown</div><div class="v" id="tb_opt_dd">—</div></div>
+        </div>
+        <h2 style="margin-top:14px;">Top configurations tried</h2>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="text-align:left;color:var(--muted);">
+              <th style="padding:6px 8px;">#</th><th style="padding:6px 8px;">Exit rule</th>
+              <th style="padding:6px 8px;">Max size</th><th style="padding:6px 8px;">Add-ons</th>
+              <th style="padding:6px 8px;">Return</th><th style="padding:6px 8px;">Drawdown</th>
+              <th style="padding:6px 8px;">Score</th>
+            </tr></thead>
+            <tbody id="tb_leaderboard"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="grid2">
@@ -328,6 +353,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=5"></script>
+  <script src="/static/dashboard.js?v=6"></script>
 </body>
 </html>

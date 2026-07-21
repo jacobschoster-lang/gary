@@ -12,6 +12,8 @@ Implemented (per the user's brief):
 
 from __future__ import annotations
 
+from typing import Any
+
 from gary.trading.models import Signal
 
 STRATEGIES = ("momentum", "price_history", "mean_reversion")
@@ -106,14 +108,34 @@ def signal_for(name: str, prices: list[float]) -> Signal:
     return fn(prices)
 
 
-def combine(signals: list[Signal]) -> tuple[str, float, str]:
+def signals_from_config(prices: list[float], cfg: Any) -> list[Signal]:
+    """Run each enabled strategy with the tunable params from ``cfg``."""
+    out: list[Signal] = []
+    for name in cfg.strategies:
+        if name == "momentum":
+            out.append(momentum_signal(prices, cfg.momentum_lookback, cfg.momentum_threshold))
+        elif name == "price_history":
+            out.append(sma_crossover_signal(prices, cfg.sma_short, cfg.sma_long))
+        elif name == "mean_reversion":
+            out.append(mean_reversion_signal(prices, cfg.mr_window, cfg.mr_z))
+        else:
+            raise ValueError(f"unknown strategy: {name!r}")
+    return out
+
+
+def combine(
+    signals: list[Signal], weights: dict[str, float] | None = None
+) -> tuple[str, float, str]:
     """Blend multiple strategy signals into one net decision.
 
-    Votes are weighted by strength; the net direction wins. Returns
-    (action, strength, reason).
+    Votes are weighted by each signal's strength and an optional per-strategy
+    weight; the net direction wins. Returns (action, strength, reason).
     """
-    buy = sum(s.strength for s in signals if s.action == "buy")
-    sell = sum(s.strength for s in signals if s.action == "sell")
+    def w(s: Signal) -> float:
+        return s.strength * (weights.get(s.strategy, 1.0) if weights else 1.0)
+
+    buy = sum(w(s) for s in signals if s.action == "buy")
+    sell = sum(w(s) for s in signals if s.action == "sell")
     contributing = [s for s in signals if s.action != "hold"]
     if not contributing or abs(buy - sell) < 1e-9:
         return "hold", 0.0, "no consensus"

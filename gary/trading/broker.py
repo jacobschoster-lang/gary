@@ -141,6 +141,7 @@ class PaperBroker:
                 avg_cost=float(p.get("avg_cost", 0) or 0),
                 opened_on=str(p.get("opened_on", "")),
                 strategy=str(p.get("strategy", "")),
+                peak_price=float(p.get("peak_price", 0) or 0),
             )
         for f in data.get("fills", []):
             broker.fills.append(

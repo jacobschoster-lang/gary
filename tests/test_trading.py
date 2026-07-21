@@ -8,7 +8,14 @@ reproducible without network access.
 from fastapi.testclient import TestClient
 
 from gary.app import app
-from gary.trading import BotConfig, PaperBroker, RobinhoodCryptoBroker, TradingBot, TradingStore
+from gary.trading import (
+    BotConfig,
+    PaperBroker,
+    RobinhoodCryptoBroker,
+    TradingBot,
+    TradingStore,
+    optimize,
+)
 from gary.trading.models import Position
 from gary.trading.risk import (
     rebalance_amount,
@@ -162,6 +169,82 @@ def test_store_roundtrip(tmp_path):
     assert round(loaded_broker.realized_pnl, 2) == round(bot.broker.realized_pnl, 2)
 
 
+# ---------- tuning: config, trailing stop, add-ons, min strength ----------
+def test_config_roundtrip_preserves_tuning_knobs():
+    cfg = BotConfig(
+        trailing_stop_pct=0.18, allow_add_ons=True, min_signal_strength=0.3,
+        momentum_lookback=7, momentum_threshold=0.05, sma_short=3, sma_long=15,
+        mr_window=10, mr_z=1.5, weights={"momentum": 2.0, "price_history": 1.0,
+                                          "mean_reversion": 0.5},
+    )
+    restored = BotConfig.from_dict(cfg.to_dict())
+    assert restored.trailing_stop_pct == 0.18
+    assert restored.allow_add_ons is True
+    assert restored.momentum_lookback == 7
+    assert restored.weights["momentum"] == 2.0
+
+
+def test_trailing_stop_lets_winner_run_then_exits_on_pullback():
+    cfg = BotConfig(
+        universe=["NVDA"], strategies=["momentum"], trailing_stop_pct=0.15,
+        take_profit_pct=5.0,  # effectively disable fixed take-profit
+    )
+    broker = PaperBroker(cash=0.0)
+    broker.positions["NVDA"] = Position("NVDA", 10.0, avg_cost=100.0, peak_price=100.0)
+    bot = TradingBot(cfg, broker, use_live=False)
+    # +50% — a fixed +30% take-profit would have sold; trailing lets it run.
+    bot.run_tick({"NVDA": [100.0] * 20 + [150.0]}, on="d1")
+    assert "NVDA" in bot.broker.positions
+    assert bot.broker.positions["NVDA"].peak_price == 150.0
+    # Pull back 20% from the 150 peak (>15% trail) -> exit, still in profit.
+    bot.run_tick({"NVDA": [100.0] * 20 + [150.0, 120.0]}, on="d2")
+    assert "NVDA" not in bot.broker.positions
+    assert bot.broker.realized_pnl == 200.0
+    assert bot.broker.reserve == 100.0  # 50% of the realized gain
+
+
+def test_add_ons_pyramid_into_winner():
+    cfg = BotConfig(
+        universe=["NVDA"], strategies=["momentum"], allow_add_ons=True, max_position_pct=0.6,
+    )
+    broker = PaperBroker(cash=10_000.0)
+    bot = TradingBot(cfg, broker, use_live=False)
+    trend = [100.0 + i for i in range(20)]
+    bot.run_tick({"NVDA": trend}, on="d1")
+    q1 = bot.broker.positions["NVDA"].quantity
+    bot.run_tick({"NVDA": trend + [trend[-1] + 1]}, on="d2")
+    assert bot.broker.positions["NVDA"].quantity > q1
+
+
+def test_add_ons_disabled_does_not_double_buy():
+    cfg = BotConfig(universe=["NVDA"], strategies=["momentum"], allow_add_ons=False)
+    broker = PaperBroker(cash=10_000.0)
+    bot = TradingBot(cfg, broker, use_live=False)
+    trend = [100.0 + i for i in range(20)]
+    bot.run_tick({"NVDA": trend}, on="d1")
+    q1 = bot.broker.positions["NVDA"].quantity
+    bot.run_tick({"NVDA": trend + [trend[-1] + 1]}, on="d2")
+    assert bot.broker.positions["NVDA"].quantity == q1
+
+
+def test_min_signal_strength_blocks_weak_entries():
+    cfg = BotConfig(universe=["NVDA"], strategies=["momentum"], min_signal_strength=0.99)
+    bot = TradingBot(cfg, PaperBroker(cash=10_000.0), use_live=False)
+    bot.run_tick({"NVDA": [100.0 + i * 0.1 for i in range(20)]}, on="d1")  # mild trend
+    assert "NVDA" not in bot.broker.positions
+
+
+# ---------- optimizer ----------
+def test_optimizer_is_deterministic_and_beats_or_matches_baseline():
+    r1 = optimize(BotConfig(), days=25, use_live=False)
+    r2 = optimize(BotConfig(), days=25, use_live=False)
+    assert r1["tried"] == 48
+    assert r1["best"]["end_equity"] == r2["best"]["end_equity"]  # deterministic
+    board = r1["leaderboard"]
+    assert board[0]["score"] >= board[-1]["score"]  # sorted best-first
+    assert r1["best"]["score"] >= r1["baseline"]["score"]
+
+
 # ---------- robinhood seam ----------
 def test_robinhood_env_gating():
     assert RobinhoodCryptoBroker.from_env(env={}) is None
@@ -191,3 +274,20 @@ def test_api_trading_run_and_status(tmp_path, monkeypatch):
 
     reset = client.post("/api/trading/reset", json={}).json()
     assert reset["account"]["equity"] == 10_000.0
+
+
+def test_api_trading_optimize(tmp_path, monkeypatch):
+    monkeypatch.setenv("GARY_TRADING_FILE", str(tmp_path / "trading.json"))
+    import gary.app as app_module
+
+    app_module.trading_store = TradingStore()
+
+    resp = client.post("/api/trading/optimize", json={"days": 20})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "optimization" in body
+    assert body["optimization"]["tried"] == 48
+    assert len(body["optimization"]["leaderboard"]) >= 1
+    # The optimized config is persisted and reflected in status.
+    status = client.get("/api/trading/status").json()
+    assert status["has_run"] is True

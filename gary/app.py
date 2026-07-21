@@ -42,7 +42,7 @@ from gary.pipeline import ContentPipeline
 from gary.realestate import search_listings
 from gary.render import render_story
 from gary.render.preview_cache import get_or_render
-from gary.trading import BotConfig, RobinhoodCryptoBroker, TradingBot, TradingStore
+from gary.trading import BotConfig, RobinhoodCryptoBroker, TradingBot, TradingStore, optimize
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -434,6 +434,28 @@ def trading_run(req: TradingRunIn) -> dict[str, Any]:
     bot = TradingBot(config=config)
     report = bot.simulate(req.days)
     trading_store.save(config, bot.broker)
+    report["robinhood_configured"] = RobinhoodCryptoBroker.from_env() is not None
+    report["mode"] = "paper"
+    return report
+
+
+@app.post("/api/trading/optimize")
+def trading_optimize(req: TradingRunIn) -> dict[str, Any]:
+    """Grid-search the tunable knobs, apply the best config, and run it on paper."""
+    config, _ = trading_store.load()
+    result = optimize(base=config, days=req.days)
+    best_cfg = BotConfig.from_dict(result["best_config"])
+    bot = TradingBot(config=best_cfg)
+    report = bot.simulate(req.days)
+    trading_store.save(best_cfg, bot.broker)
+    report["optimization"] = {
+        "tried": result["tried"],
+        "days": result["days"],
+        "baseline": result["baseline"],
+        "best": result["best"],
+        "leaderboard": result["leaderboard"],
+        "improvement": result["improvement_pct"],
+    }
     report["robinhood_configured"] = RobinhoodCryptoBroker.from_env() is not None
     report["mode"] = "paper"
     return report

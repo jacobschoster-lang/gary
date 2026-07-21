@@ -34,6 +34,7 @@ class Position:
     avg_cost: float
     opened_on: str = ""
     strategy: str = ""
+    peak_price: float = 0.0  # highest price seen while held (for trailing stop)
 
     def cost_basis(self) -> float:
         return self.quantity * self.avg_cost
@@ -100,6 +101,22 @@ class BotConfig:
         default_factory=lambda: ["momentum", "price_history", "mean_reversion"]
     )
 
+    # --- tunable knobs (optimizer searches over these) --------------------
+    trailing_stop_pct: float = 0.0  # >0 lets winners run: exit on drop from peak
+    allow_add_ons: bool = False  # pyramid into winners up to the position cap
+    min_signal_strength: float = 0.0  # ignore weak blended buy signals
+    # strategy internals
+    momentum_lookback: int = 10
+    momentum_threshold: float = 0.03
+    sma_short: int = 5
+    sma_long: int = 20
+    mr_window: int = 20
+    mr_z: float = 1.0
+    # per-strategy vote weights in the blend
+    weights: dict[str, float] = field(
+        default_factory=lambda: {"momentum": 1.0, "price_history": 1.0, "mean_reversion": 1.0}
+    )
+
     def goal_equity(self) -> float:
         return self.starting_cash * self.goal_multiple
 
@@ -117,6 +134,7 @@ class BotConfig:
             val = data.get(key)
             return cast(val) if val is not None else default
 
+        weights = data.get("weights")
         return cls(
             starting_cash=num("starting_cash", base.starting_cash),
             goal_multiple=num("goal_multiple", base.goal_multiple),
@@ -128,4 +146,22 @@ class BotConfig:
             safe_symbol=str(data.get("safe_symbol") or base.safe_symbol),
             universe=list(data.get("universe") or base.universe),
             strategies=list(data.get("strategies") or base.strategies),
+            trailing_stop_pct=num("trailing_stop_pct", base.trailing_stop_pct),
+            allow_add_ons=bool(
+                data["allow_add_ons"]
+                if data.get("allow_add_ons") is not None
+                else base.allow_add_ons
+            ),
+            min_signal_strength=num("min_signal_strength", base.min_signal_strength),
+            momentum_lookback=num("momentum_lookback", base.momentum_lookback, int),
+            momentum_threshold=num("momentum_threshold", base.momentum_threshold),
+            sma_short=num("sma_short", base.sma_short, int),
+            sma_long=num("sma_long", base.sma_long, int),
+            mr_window=num("mr_window", base.mr_window, int),
+            mr_z=num("mr_z", base.mr_z),
+            weights=(
+                {str(k): float(v) for k, v in weights.items()}
+                if weights
+                else dict(base.weights)
+            ),
         )

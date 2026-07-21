@@ -23,7 +23,7 @@ from gary.trading import prices as price_data
 from gary.trading import risk
 from gary.trading.broker import PaperBroker
 from gary.trading.models import BotConfig
-from gary.trading.strategies import combine, signal_for
+from gary.trading.strategies import combine, signals_from_config
 
 
 class TradingBot:
@@ -50,9 +50,17 @@ class TradingBot:
             price = prices.get(sym, pos.avg_cost)
             ret = pos.return_pct(price)
             reason = None
-            if risk.should_take_profit(ret, cfg.take_profit_pct):
+            if cfg.trailing_stop_pct > 0:
+                # Let winners run: arm a trailing stop once the position has been
+                # in profit, exiting only on a pullback from the peak.
+                pos.peak_price = max(pos.peak_price or pos.avg_cost, price)
+                if pos.peak_price > pos.avg_cost:
+                    drop = (pos.peak_price - price) / pos.peak_price
+                    if drop >= cfg.trailing_stop_pct:
+                        reason = f"trailing-stop +{ret * 100:.1f}% ({drop * 100:.1f}% off peak)"
+            elif risk.should_take_profit(ret, cfg.take_profit_pct):
                 reason = f"take-profit +{ret * 100:.1f}%"
-            elif risk.should_stop_loss(ret, cfg.stop_loss_pct):
+            if reason is None and risk.should_stop_loss(ret, cfg.stop_loss_pct):
                 reason = f"stop-loss {ret * 100:.1f}%"
             if reason is None:
                 continue
@@ -77,10 +85,12 @@ class TradingBot:
             if not hist or sym in exited:
                 continue
             price = prices.get(sym, hist[-1])
-            signals = [signal_for(name, hist) for name in cfg.strategies]
-            action, strength, why = combine(signals)
+            signals = signals_from_config(hist, cfg)
+            action, strength, why = combine(signals, cfg.weights)
             held = self.broker.positions.get(sym)
-            if action == "buy":
+            if action == "buy" and strength >= cfg.min_signal_strength:
+                if held is not None and not cfg.allow_add_ons:
+                    continue  # already holding; add-ons disabled
                 existing = held.market_value(price) if held else 0.0
                 notional = risk.target_position_notional(
                     equity, self.broker.cash, cfg.max_position_pct, existing, strength
@@ -90,6 +100,9 @@ class TradingBot:
                         sym, notional, price, on=on, strategy="blend", reason=why
                     )
                     if fill:
+                        pos = self.broker.positions.get(sym)
+                        if pos is not None:
+                            pos.peak_price = max(pos.peak_price, price)
                         actions.append({"action": "buy", "symbol": sym,
                                         "notional": fill.notional, "reason": why})
             elif action == "sell" and held is not None:
@@ -106,8 +119,14 @@ class TradingBot:
         return actions
 
     # -- backtest over a window ----------------------------------------------
-    def simulate(self, days: int | None = None) -> dict[str, Any]:
-        """Backtest from a fresh account over the last ``days`` of price history."""
+    def simulate(
+        self, days: int | None = None, series: dict[str, list[float]] | None = None
+    ) -> dict[str, Any]:
+        """Backtest from a fresh account over the last ``days`` of price history.
+
+        ``series`` (symbol -> closes) can be supplied to reuse already-fetched
+        prices across many candidate configs (used by the optimizer).
+        """
         cfg = self.config
         days = days or cfg.horizon_days
         self.broker = PaperBroker(cash=cfg.starting_cash)
@@ -115,7 +134,10 @@ class TradingBot:
         # Pull enough history for warmup (long SMA) + the simulated window.
         warmup = 25
         span = days + warmup
-        series = {s: price_data.price_series(s, span, use_live=self.use_live) for s in cfg.universe}
+        if series is None:
+            series = {
+                s: price_data.price_series(s, span, use_live=self.use_live) for s in cfg.universe
+            }
         length = min(len(v) for v in series.values()) if series else 0
         start_idx = max(warmup, length - days)
 
@@ -131,6 +153,22 @@ class TradingBot:
         final_prices = {s: v[length - 1] for s, v in series.items()} if length else {}
         return self.report(curve, final_prices, days=len(curve))
 
+    @staticmethod
+    def max_drawdown(curve: list[dict[str, Any]]) -> tuple[float, float]:
+        """Largest peak-to-trough equity drop over the curve (dollars, percent)."""
+        peak = float("-inf")
+        dd_dollars = 0.0
+        dd_pct = 0.0
+        for point in curve:
+            eq = point["equity"]
+            peak = max(peak, eq)
+            if peak > 0:
+                drop = peak - eq
+                if drop > dd_dollars:
+                    dd_dollars = drop
+                    dd_pct = drop / peak * 100
+        return round(dd_dollars, 2), round(dd_pct, 2)
+
     # -- reporting ------------------------------------------------------------
     def report(
         self, curve: list[dict[str, Any]], prices: dict[str, float], days: int
@@ -140,12 +178,15 @@ class TradingBot:
         start = cfg.starting_cash
         goal = cfg.goal_equity()
         ret_pct = (end_equity - start) / start * 100 if start else 0.0
+        dd_dollars, dd_pct = self.max_drawdown(curve)
         return {
             "config": cfg.to_dict(),
             "days": days,
             "start_equity": round(start, 2),
             "end_equity": round(end_equity, 2),
             "return_pct": round(ret_pct, 2),
+            "max_drawdown": dd_dollars,
+            "max_drawdown_pct": dd_pct,
             "goal_equity": round(goal, 2),
             "goal_progress_pct": round(min(100.0, end_equity / goal * 100), 2) if goal else 0.0,
             "goal_reached": end_equity >= goal,

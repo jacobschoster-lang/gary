@@ -715,8 +715,19 @@ function renderTrading(data) {
     money(acct.reserve) + ' parked in a lower-risk reserve';
   document.getElementById('tb_meta').textContent =
     `${data.num_trades || 0} trades · ${data.days || 0} days simulated · ` +
+    `max drawdown ${(data.max_drawdown_pct || 0).toFixed(1)}% · ` +
     `data: ${data.live_data ? 'live' : 'offline sample'} · mode: ${data.mode || 'paper'}` +
     (data.robinhood_configured ? ' · Robinhood key detected' : '');
+
+  const exit = (cfg.trailing_stop_pct || 0) > 0
+    ? `trailing stop ${(cfg.trailing_stop_pct * 100).toFixed(0)}% (let winners run)`
+    : `take-profit ${((cfg.take_profit_pct || 0) * 100).toFixed(0)}%`;
+  document.getElementById('tb_active').textContent =
+    `Active strategy — exit: ${exit} · stop-loss ${((cfg.stop_loss_pct || 0) * 100).toFixed(0)}% · ` +
+    `max ${((cfg.max_position_pct || 0) * 100).toFixed(0)}%/position · ` +
+    `add-ons ${cfg.allow_add_ons ? 'on' : 'off'} · reserve skim ${((cfg.rebalance_profit_pct || 0) * 100).toFixed(0)}%`;
+
+  if (data.optimization) renderOptimization(data.optimization);
 
   const posEl = document.getElementById('tb_positions');
   const positions = acct.positions || [];
@@ -775,10 +786,59 @@ function renderTrading(data) {
   }
 }
 
+function renderOptimization(opt) {
+  const box = document.getElementById('tb_optim');
+  box.style.display = 'block';
+  document.getElementById('tb_optim_summary').textContent =
+    `Searched ${opt.tried} configurations over ${opt.days} days. ` +
+    `Applied the best (highest drawdown-adjusted score).`;
+  const base = opt.baseline || {}, best = opt.best || {};
+  const baseEl = document.getElementById('tb_opt_base');
+  baseEl.textContent = pct(base.return_pct);
+  baseEl.style.color = (base.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+  const bestEl = document.getElementById('tb_opt_best');
+  bestEl.textContent = pct(best.return_pct);
+  bestEl.style.color = (best.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+  const impr = (best.return_pct || 0) - (base.return_pct || 0);
+  const imprEl = document.getElementById('tb_opt_impr');
+  imprEl.textContent = (impr >= 0 ? '+' : '') + impr.toFixed(2) + ' pts';
+  imprEl.style.color = impr >= 0 ? 'var(--green)' : 'var(--red)';
+  document.getElementById('tb_opt_dd').textContent = (best.max_drawdown_pct || 0).toFixed(1) + '%';
+
+  const rows = (opt.leaderboard || []).map((r, i) => {
+    const p = r.params || {};
+    return `<tr style="border-top:1px solid ${GRID};${i === 0 ? 'font-weight:700;' : ''}">
+      <td style="padding:6px 8px;">${i + 1}</td>
+      <td style="padding:6px 8px;">${esc(p.exit)}</td>
+      <td style="padding:6px 8px;">${((p.max_position_pct || 0) * 100).toFixed(0)}%</td>
+      <td style="padding:6px 8px;">${p.allow_add_ons ? 'yes' : 'no'}</td>
+      <td style="padding:6px 8px;color:${(r.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.return_pct)}</td>
+      <td style="padding:6px 8px;">${(r.max_drawdown_pct || 0).toFixed(1)}%</td>
+      <td style="padding:6px 8px;">${money(r.score)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('tb_leaderboard').innerHTML = rows ||
+    '<tr><td class="muted" colspan="7" style="padding:8px;">No results.</td></tr>';
+}
+
 async function loadTrading() {
   try {
     showAlert('trading_alert', '');
     const data = await apiFetch('/api/trading/status');
+    renderTrading(data);
+  } catch (e) {
+    showAlert('trading_alert', e.message);
+  }
+}
+
+async function optimizeBot() {
+  try {
+    showAlert('trading_alert', '');
+    const days = parseInt(document.getElementById('tb_days').value, 10) || 30;
+    const data = await apiFetch('/api/trading/optimize', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days }),
+    });
     renderTrading(data);
   } catch (e) {
     showAlert('trading_alert', e.message);
@@ -813,6 +873,8 @@ async function resetBot() {
 
 document.getElementById('btn_run_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_run_bot'), runBot));
+document.getElementById('btn_optimize_bot')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_optimize_bot'), optimizeBot));
 document.getElementById('btn_reset_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_reset_bot'), resetBot));
 
