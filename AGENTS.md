@@ -102,10 +102,16 @@ Trading bot (paper):
  `metrics` block via `metrics.summarize(equity_series, fills)`.
 - Portfolio/signal modes (all on `BotConfig`, off by default so `per_symbol`
  behavior is unchanged): `selection_mode="cross_sectional"` (rank the universe by
- momentum, hold top-N, rotate), `regime_ma` (trend filter — only hold names above
- that MA, with regime exits), and `vol_target` (volatility-targeted sizing in
- `risk.position_notional`). `TradingBot.warmup()` widens history to the longest
+ momentum, hold top-N, rotate), `selection_mode="long_short"` (long top-N, short
+ bottom-N — market-neutral, uses `PaperBroker.short`/`cover` with signed positions
+ and per-bar `borrow_bps`), `regime_ma` (trend filter with regime exits), and
+ `vol_target` (volatility-targeted sizing in `risk.position_notional`).
+ `rebalance_every` throttles turnover (risk exits still run every bar; rotation/
+ entries only every N bars). `TradingBot.warmup()` widens history to the longest
  lookback in use, so more history is fetched when these are enabled.
+- `gary/trading/selection.py` provides robust-selection stats (robustness =
+ mean − stdev across folds; deflated Sharpe for multiple-testing). The optimizer
+ chooses the config on **train** robustness only, then reports out-of-sample.
 - `gary/trading/montecarlo.py` bootstraps out-of-sample trades into an outcome
  distribution (P(reach goal), risk of ruin, p5/p50/p95).
 - Dev gotcha: `uvicorn --reload` only watches `.py` files, NOT the Jinja
@@ -115,14 +121,15 @@ Trading bot (paper):
  don't serve a stale cached script against a new template.
 - `POST /api/trading/optimize` (`gary/trading/optimize.py`) is **rolling
  walk-forward**:
- it slides K (train, test) folds through history, tuning on each train window
- (risk-adjusted Sharpe objective) and scoring only on the following
- out-of-sample window, then aggregates OOS across folds plus a buy-and-hold
- benchmark, an overfit gap, and a Monte Carlo of the OOS trades. It fetches each
- symbol's series once and reuses it across all candidates and folds.
- Deterministic offline. Expect OOS to be well below in-sample and to often lose
- to buy-and-hold (especially in a bull run) — surfacing that honestly is the
- point.
+ it slides K (train, test) folds through history with a **purge/embargo** gap
+ between train and test, tunes on each train window (robust selection above),
+ scores only on the following out-of-sample window, then aggregates OOS across
+ folds plus a buy-and-hold benchmark, an overfit gap, a deflated Sharpe, and a
+ Monte Carlo of the OOS trades. It fetches each symbol's series once and reuses
+ it across all candidates and folds. Deterministic offline. Expect OOS well
+ below in-sample; in a bull run it usually loses to buy-and-hold, and in a
+ downturn the defensive/low-turnover picks tend to beat it by losing less —
+ surfacing that honestly is the point.
 - Prices come from `gary/trading/prices.py` (Yahoo/CoinGecko via
  `gary.data.http`) with a **deterministic synthetic fallback** seeded per
  symbol, so simulations run offline and tests are reproducible (the offline
