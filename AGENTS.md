@@ -112,6 +112,22 @@ Trading bot (paper):
 - `gary/trading/selection.py` provides robust-selection stats (robustness =
  mean − stdev across folds; deflated Sharpe for multiple-testing). The optimizer
  chooses the config on **train** robustness only, then reports out-of-sample.
+- `selection_mode="buy_hold"` is a regime-filtered, vol-targeted, low-turnover
+ "smart buy & hold" baseline (holds the eligible universe). It's in the grid; on
+ recent data the robust optimizer often picks it — consistent with the honest
+ finding that active trading rarely beats holding here.
+- Forward paper trading (distinct from the from-scratch backtest): `TradingBot.
+ step_live()` advances the **persisted** account one step at the latest prices;
+ `TradingStore.record_equity()` keeps a de-duped daily equity history (exposed at
+ `/api/trading/status` as `forward_equity`). `python -m gary.jobs.trade_daily`
+ runs one forward step for a scheduler (paper-only, safe; writes a manifest to
+ `out/`). It never sends real orders.
+- Live crypto seam (`gary/trading/robinhood.py`): builds + Ed25519-signs official
+ Robinhood Crypto requests via an **injectable signer** (no hard crypto dep;
+ `default_ed25519_signer` uses `cryptography`/`PyNaCl` if installed). Request/
+ header construction is unit-tested offline; `place_order` refuses unless
+ `TRADING_LIVE=1` and a `transport` is supplied. Engine order routing to live is
+ intentionally not wired — the bot stays on `PaperBroker`.
 - `gary/trading/montecarlo.py` bootstraps out-of-sample trades into an outcome
  distribution (P(reach goal), risk of ruin, p5/p50/p95).
 - Dev gotcha: `uvicorn --reload` only watches `.py` files, NOT the Jinja
