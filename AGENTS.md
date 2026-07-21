@@ -82,6 +82,26 @@ Real estate:
   Radius search centers on coords in `CITY_COORDS` (Cincinnati and a few metros);
   acreage/price are filtered client-side (RentCast returns lotSize in sqft).
 
+Trading bot (paper):
+- `gary/trading/` powers the dashboard "Trading" tab and `/api/trading/*`
+ (`status`, `run`, `reset`). It's a **paper** bot (`PaperBroker`) — no real
+ money — blending momentum, price-history (SMA crossover), and mean-reversion
+ signals with risk rules (30% take-profit, stop-loss, and skimming 50% of
+ realized profit into a lower-risk reserve). Defaults: $10k start, 2× goal.
+- `POST /api/trading/run` runs a from-scratch backtest over the last N days and
+ persists the resulting account to `finance_data/trading.json` (gitignored;
+ override with `GARY_TRADING_FILE`).
+- Prices come from `gary/trading/prices.py` (Yahoo/CoinGecko via
+ `gary.data.http`) with a **deterministic synthetic fallback** seeded per
+ symbol, so simulations run offline and tests are reproducible (the offline
+ fixture in `tests/conftest.py` forces the synthetic path). Strategies in
+ `gary/trading/strategies.py` are pure functions over a close series.
+- Going live is an env-gated seam: `gary/trading/robinhood.py`
+ (`RobinhoodCryptoBroker.from_env`, needs `ROBINHOOD_API_KEY`/
+ `ROBINHOOD_PRIVATE_KEY` + `TRADING_LIVE=1`). Order placement is intentionally
+ unimplemented — Robinhood has no official equities API; only the official
+ Crypto API is safe to wire in. Keep the bot on paper until then.
+
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly
   (not pip-installed), so the working directory must be the repo root for
