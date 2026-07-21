@@ -234,15 +234,54 @@ def test_min_signal_strength_blocks_weak_entries():
     assert "NVDA" not in bot.broker.positions
 
 
-# ---------- optimizer ----------
-def test_optimizer_is_deterministic_and_beats_or_matches_baseline():
-    r1 = optimize(BotConfig(), days=25, use_live=False)
-    r2 = optimize(BotConfig(), days=25, use_live=False)
+# ---------- costs & next-bar execution ----------
+def test_costs_reduce_proceeds_and_track_fees():
+    b = PaperBroker(cash=1000.0, fee_bps=10.0, slippage_bps=5.0)
+    b.buy("X", 1000.0, 100.0)
+    assert b.cash == 0.0
+    assert b.fees_paid > 0
+    qty = 999.0 / (100.0 * 1.0005)  # invested (net of 0.1% fee) / slipped price
+    assert abs(b.positions["X"].quantity - qty) < 1e-6
+    assert abs(b.positions["X"].avg_cost - 1000.0 / qty) < 1e-6
+    # A round trip at the same nominal price must lose money to costs.
+    b.sell("X", b.positions["X"].quantity, 100.0)
+    assert b.realized_pnl < 0
+    assert b.fees_paid > 1.0
+
+
+def test_zero_costs_are_backward_compatible():
+    b = PaperBroker(cash=1000.0)  # fee/slippage default to 0
+    b.buy("X", 500.0, 100.0)
+    fill = b.sell("X", 5.0, 120.0)
+    assert fill.realized_pnl == 100.0
+    assert b.fees_paid == 0.0
+
+
+def test_next_bar_execution_fills_at_following_price():
+    cfg = BotConfig(
+        universe=["NVDA"], strategies=["momentum"], fee_bps=0.0, slippage_bps=0.0,
+        max_position_pct=1.0,
+    )
+    bot = TradingBot(cfg, use_live=False)
+    prices = [100.0 + i for i in range(35)]  # steady uptrend -> momentum buy
+    bot._run({"NVDA": prices}, [34])  # decide on data <34, fill at bar 34
+    buys = [f for f in bot.broker.fills if f.side == "buy"]
+    assert buys
+    assert abs(buys[0].price - prices[34]) < 1e-9  # filled at bar 34, not bar 33
+
+
+# ---------- walk-forward optimizer ----------
+def test_optimizer_walk_forward_is_deterministic_and_reports_oos():
+    r1 = optimize(BotConfig(), days=30, use_live=False)
+    r2 = optimize(BotConfig(), days=30, use_live=False)
     assert r1["tried"] == 48
-    assert r1["best"]["end_equity"] == r2["best"]["end_equity"]  # deterministic
+    # Deterministic out-of-sample result.
+    assert r1["out_of_sample"]["return_pct"] == r2["out_of_sample"]["return_pct"]
+    # Walk-forward reports both in-sample and honest OOS, plus a benchmark.
+    assert "in_sample" in r1 and "out_of_sample" in r1
+    assert "benchmark" in r1 and "overfit_gap_pct" in r1
     board = r1["leaderboard"]
-    assert board[0]["score"] >= board[-1]["score"]  # sorted best-first
-    assert r1["best"]["score"] >= r1["baseline"]["score"]
+    assert board and "train_return_pct" in board[0] and "test_return_pct" in board[0]
 
 
 # ---------- robinhood seam ----------
@@ -282,12 +321,16 @@ def test_api_trading_optimize(tmp_path, monkeypatch):
 
     app_module.trading_store = TradingStore()
 
-    resp = client.post("/api/trading/optimize", json={"days": 20})
+    resp = client.post("/api/trading/optimize", json={"days": 25})
     assert resp.status_code == 200
     body = resp.json()
     assert "optimization" in body
-    assert body["optimization"]["tried"] == 48
-    assert len(body["optimization"]["leaderboard"]) >= 1
+    opt = body["optimization"]
+    assert opt["tried"] == 48
+    assert "out_of_sample" in opt and "benchmark" in opt
+    assert len(opt["leaderboard"]) >= 1
+    # The applied run carries the full metrics scorecard.
+    assert "metrics" in body and "sharpe" in body["metrics"]
     # The optimized config is persisted and reflected in status.
     status = client.get("/api/trading/status").json()
     assert status["has_run"] is True

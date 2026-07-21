@@ -713,9 +713,12 @@ function renderTrading(data) {
 
   document.getElementById('tb_reserve').textContent =
     money(acct.reserve) + ' parked in a lower-risk reserve';
-  document.getElementById('tb_meta').textContent =
-    `${data.num_trades || 0} trades · ${data.days || 0} days simulated · ` +
-    `max drawdown ${(data.max_drawdown_pct || 0).toFixed(1)}% · ` +
+  const m = data.metrics || {};
+  document.getElementById('tb_meta').innerHTML =
+    `Sharpe ${(m.sharpe || 0).toFixed(2)} · Calmar ${(m.calmar || 0).toFixed(2)} · ` +
+    `win rate ${(m.win_rate || 0).toFixed(0)}% · profit factor ${(m.profit_factor || 0).toFixed(2)} · ` +
+    `max drawdown ${(data.max_drawdown_pct || 0).toFixed(1)}% · fees ${money(data.fees_paid)}<br>` +
+    `${data.num_trades || 0} trades · turnover ${(m.turnover || 0).toFixed(1)}x · ${data.days || 0} days · ` +
     `data: ${data.live_data ? 'live' : 'offline sample'} · mode: ${data.mode || 'paper'}` +
     (data.robinhood_configured ? ' · Robinhood key detected' : '');
 
@@ -786,24 +789,31 @@ function renderTrading(data) {
   }
 }
 
+function colorPct(el, v) {
+  el.textContent = pct(v);
+  el.style.color = (v || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
 function renderOptimization(opt) {
   const box = document.getElementById('tb_optim');
   box.style.display = 'block';
-  document.getElementById('tb_optim_summary').textContent =
-    `Searched ${opt.tried} configurations over ${opt.days} days. ` +
-    `Applied the best (highest drawdown-adjusted score).`;
-  const base = opt.baseline || {}, best = opt.best || {};
-  const baseEl = document.getElementById('tb_opt_base');
-  baseEl.textContent = pct(base.return_pct);
-  baseEl.style.color = (base.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
-  const bestEl = document.getElementById('tb_opt_best');
-  bestEl.textContent = pct(best.return_pct);
-  bestEl.style.color = (best.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
-  const impr = (best.return_pct || 0) - (base.return_pct || 0);
-  const imprEl = document.getElementById('tb_opt_impr');
-  imprEl.textContent = (impr >= 0 ? '+' : '') + impr.toFixed(2) + ' pts';
-  imprEl.style.color = impr >= 0 ? 'var(--green)' : 'var(--red)';
-  document.getElementById('tb_opt_dd').textContent = (best.max_drawdown_pct || 0).toFixed(1) + '%';
+  if (opt.degenerate) {
+    document.getElementById('tb_optim_summary').textContent = opt.note || 'Ran in-sample.';
+    return;
+  }
+  const is = opt.in_sample || {}, oos = opt.out_of_sample || {}, bench = opt.benchmark || {};
+  document.getElementById('tb_optim_summary').innerHTML =
+    `Walk-forward: tuned on ${opt.train_days} train days (objective: ${esc(opt.objective || 'sharpe')}), ` +
+    `reported on ${opt.test_days} <strong>out-of-sample</strong> days across ${opt.tried} configs. ` +
+    `The applied stats above reflect the most recent window; the numbers below are the honest OOS test.` +
+    `<div style="margin-top:6px;">Beats buy &amp; hold out-of-sample: ` +
+    `<strong style="color:${opt.beats_benchmark ? 'var(--green)' : 'var(--red)'}">${opt.beats_benchmark ? 'yes' : 'no'}</strong> ` +
+    `· overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>`;
+
+  colorPct(document.getElementById('tb_opt_base'), is.return_pct);
+  colorPct(document.getElementById('tb_opt_best'), oos.return_pct);
+  colorPct(document.getElementById('tb_opt_impr'), bench.return_pct);
+  document.getElementById('tb_opt_dd').textContent = (oos.max_drawdown_pct || 0).toFixed(1) + '%';
 
   const rows = (opt.leaderboard || []).map((r, i) => {
     const p = r.params || {};
@@ -812,9 +822,9 @@ function renderOptimization(opt) {
       <td style="padding:6px 8px;">${esc(p.exit)}</td>
       <td style="padding:6px 8px;">${((p.max_position_pct || 0) * 100).toFixed(0)}%</td>
       <td style="padding:6px 8px;">${p.allow_add_ons ? 'yes' : 'no'}</td>
-      <td style="padding:6px 8px;color:${(r.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.return_pct)}</td>
-      <td style="padding:6px 8px;">${(r.max_drawdown_pct || 0).toFixed(1)}%</td>
-      <td style="padding:6px 8px;">${money(r.score)}</td>
+      <td style="padding:6px 8px;color:${(r.train_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.train_return_pct)}</td>
+      <td style="padding:6px 8px;color:${(r.test_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.test_return_pct)}</td>
+      <td style="padding:6px 8px;">${(r.sharpe || 0).toFixed(2)}</td>
     </tr>`;
   }).join('');
   document.getElementById('tb_leaderboard').innerHTML = rows ||

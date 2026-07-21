@@ -441,21 +441,15 @@ def trading_run(req: TradingRunIn) -> dict[str, Any]:
 
 @app.post("/api/trading/optimize")
 def trading_optimize(req: TradingRunIn) -> dict[str, Any]:
-    """Grid-search the tunable knobs, apply the best config, and run it on paper."""
+    """Walk-forward optimize (train/test split), apply the best config on paper."""
     config, _ = trading_store.load()
     result = optimize(base=config, days=req.days)
     best_cfg = BotConfig.from_dict(result["best_config"])
     bot = TradingBot(config=best_cfg)
     report = bot.simulate(req.days)
     trading_store.save(best_cfg, bot.broker)
-    report["optimization"] = {
-        "tried": result["tried"],
-        "days": result["days"],
-        "baseline": result["baseline"],
-        "best": result["best"],
-        "leaderboard": result["leaderboard"],
-        "improvement": result["improvement_pct"],
-    }
+    result.pop("best_report", None)  # trim nested report; UI uses the applied run
+    report["optimization"] = result
     report["robinhood_configured"] = RobinhoodCryptoBroker.from_env() is not None
     report["mode"] = "paper"
     return report

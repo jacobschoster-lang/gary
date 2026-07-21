@@ -101,6 +101,10 @@ class BotConfig:
         default_factory=lambda: ["momentum", "price_history", "mean_reversion"]
     )
 
+    # --- trading frictions (realism) --------------------------------------
+    fee_bps: float = 10.0  # commission/spread per trade, in basis points (0.10%)
+    slippage_bps: float = 5.0  # adverse fill vs. close, in basis points (0.05%)
+
     # --- tunable knobs (optimizer searches over these) --------------------
     trailing_stop_pct: float = 0.0  # >0 lets winners run: exit on drop from peak
     allow_add_ons: bool = False  # pyramid into winners up to the position cap
@@ -146,6 +150,8 @@ class BotConfig:
             safe_symbol=str(data.get("safe_symbol") or base.safe_symbol),
             universe=list(data.get("universe") or base.universe),
             strategies=list(data.get("strategies") or base.strategies),
+            fee_bps=num("fee_bps", base.fee_bps),
+            slippage_bps=num("slippage_bps", base.slippage_bps),
             trailing_stop_pct=num("trailing_stop_pct", base.trailing_stop_pct),
             allow_add_ons=bool(
                 data["allow_add_ons"]

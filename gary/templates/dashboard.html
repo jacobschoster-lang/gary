@@ -229,22 +229,22 @@
       </div>
 
       <div id="tb_optim" class="card" style="display:none;background:var(--panel-2);">
-        <h2>Optimization result</h2>
+        <h2>Walk-forward optimization</h2>
         <div id="tb_optim_summary" class="muted"></div>
         <div class="stats" style="margin-top:10px;">
-          <div class="stat"><div class="k">Baseline return</div><div class="v" id="tb_opt_base">—</div></div>
-          <div class="stat"><div class="k">Optimized return</div><div class="v" id="tb_opt_best">—</div></div>
-          <div class="stat"><div class="k">Improvement</div><div class="v" id="tb_opt_impr">—</div></div>
-          <div class="stat"><div class="k">Max drawdown</div><div class="v" id="tb_opt_dd">—</div></div>
+          <div class="stat"><div class="k">In-sample return</div><div class="v" id="tb_opt_base">—</div></div>
+          <div class="stat"><div class="k">Out-of-sample return</div><div class="v" id="tb_opt_best">—</div></div>
+          <div class="stat"><div class="k">Buy &amp; hold (OOS)</div><div class="v" id="tb_opt_impr">—</div></div>
+          <div class="stat"><div class="k">OOS max drawdown</div><div class="v" id="tb_opt_dd">—</div></div>
         </div>
-        <h2 style="margin-top:14px;">Top configurations tried</h2>
+        <h2 style="margin-top:14px;">Top configs — train vs. out-of-sample</h2>
         <div style="overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead><tr style="text-align:left;color:var(--muted);">
               <th style="padding:6px 8px;">#</th><th style="padding:6px 8px;">Exit rule</th>
               <th style="padding:6px 8px;">Max size</th><th style="padding:6px 8px;">Add-ons</th>
-              <th style="padding:6px 8px;">Return</th><th style="padding:6px 8px;">Drawdown</th>
-              <th style="padding:6px 8px;">Score</th>
+              <th style="padding:6px 8px;">Train return</th><th style="padding:6px 8px;">OOS return</th>
+              <th style="padding:6px 8px;">OOS Sharpe</th>
             </tr></thead>
             <tbody id="tb_leaderboard"></tbody>
           </table>
@@ -353,6 +353,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=6"></script>
+  <script src="/static/dashboard.js?v=7"></script>
 </body>
 </html>

@@ -19,8 +19,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
+from gary.trading import metrics, risk
 from gary.trading import prices as price_data
-from gary.trading import risk
 from gary.trading.broker import PaperBroker
 from gary.trading.models import BotConfig
 from gary.trading.strategies import combine, signals_from_config
@@ -38,10 +38,20 @@ class TradingBot:
         self.use_live = use_live
 
     # -- one step -------------------------------------------------------------
-    def run_tick(self, history: dict[str, list[float]], on: str) -> list[dict[str, Any]]:
-        """Advance the bot one bar. ``history[sym]`` is closes up to & incl. today."""
+    def run_tick(
+        self,
+        history: dict[str, list[float]],
+        on: str,
+        exec_prices: dict[str, float] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Advance the bot one bar.
+
+        ``history[sym]`` is the closes known at decision time. ``exec_prices``
+        is where orders actually fill — pass the *next* bar's price to avoid
+        look-ahead bias. When omitted, fills use the last close in ``history``.
+        """
         cfg = self.config
-        prices = {s: h[-1] for s, h in history.items() if h}
+        prices = exec_prices or {s: h[-1] for s, h in history.items() if h}
         actions: list[dict[str, Any]] = []
         exited: set[str] = set()  # don't re-enter a name we just closed this tick
 
@@ -118,6 +128,34 @@ class TradingBot:
                     actions.append(act)
         return actions
 
+    WARMUP = 25  # bars of history needed before the first trade (long SMA, etc.)
+
+    # -- core backtest loop ---------------------------------------------------
+    def _run(
+        self, series: dict[str, list[float]], exec_bars: list[int]
+    ) -> tuple[list[dict[str, Any]], dict[str, float]]:
+        """Run the tick loop, executing at each bar in ``exec_bars``.
+
+        At execution bar ``e`` decisions use closes strictly before ``e``
+        (``series[:e]``) and orders fill at ``series[e]`` — i.e. next-bar-open
+        execution, which removes look-ahead bias.
+        """
+        cfg = self.config
+        self.broker = PaperBroker(
+            cash=cfg.starting_cash, fee_bps=cfg.fee_bps, slippage_bps=cfg.slippage_bps
+        )
+        length = min((len(v) for v in series.values()), default=0)
+        today = date.today()
+        curve: list[dict[str, Any]] = []
+        for e in exec_bars:
+            history = {s: v[:e] for s, v in series.items()}
+            exec_prices = {s: v[e] for s, v in series.items()}
+            on = (today - timedelta(days=length - 1 - e)).isoformat()
+            self.run_tick(history, on, exec_prices=exec_prices)
+            curve.append({"date": on, "equity": round(self.broker.equity(exec_prices), 2)})
+        final_prices = {s: v[exec_bars[-1]] for s, v in series.items()} if exec_bars else {}
+        return curve, final_prices
+
     # -- backtest over a window ----------------------------------------------
     def simulate(
         self, days: int | None = None, series: dict[str, list[float]] | None = None
@@ -129,45 +167,17 @@ class TradingBot:
         """
         cfg = self.config
         days = days or cfg.horizon_days
-        self.broker = PaperBroker(cash=cfg.starting_cash)
-
-        # Pull enough history for warmup (long SMA) + the simulated window.
-        warmup = 25
-        span = days + warmup
         if series is None:
+            span = days + self.WARMUP + 1  # +1 so the last decision has a next bar to fill on
             series = {
                 s: price_data.price_series(s, span, use_live=self.use_live) for s in cfg.universe
             }
-        length = min(len(v) for v in series.values()) if series else 0
-        start_idx = max(warmup, length - days)
-
-        today = date.today()
-        curve: list[dict[str, Any]] = []
-        for i in range(start_idx, length):
-            history = {s: v[: i + 1] for s, v in series.items()}
-            on = (today - timedelta(days=length - 1 - i)).isoformat()
-            self.run_tick(history, on)
-            prices = {s: v[i] for s, v in series.items()}
-            curve.append({"date": on, "equity": round(self.broker.equity(prices), 2)})
-
-        final_prices = {s: v[length - 1] for s, v in series.items()} if length else {}
+        length = min((len(v) for v in series.values()), default=0)
+        last = length - 1
+        first = max(self.WARMUP, last - days + 1)
+        exec_bars = list(range(first, last + 1))
+        curve, final_prices = self._run(series, exec_bars)
         return self.report(curve, final_prices, days=len(curve))
-
-    @staticmethod
-    def max_drawdown(curve: list[dict[str, Any]]) -> tuple[float, float]:
-        """Largest peak-to-trough equity drop over the curve (dollars, percent)."""
-        peak = float("-inf")
-        dd_dollars = 0.0
-        dd_pct = 0.0
-        for point in curve:
-            eq = point["equity"]
-            peak = max(peak, eq)
-            if peak > 0:
-                drop = peak - eq
-                if drop > dd_dollars:
-                    dd_dollars = drop
-                    dd_pct = drop / peak * 100
-        return round(dd_dollars, 2), round(dd_pct, 2)
 
     # -- reporting ------------------------------------------------------------
     def report(
@@ -178,15 +188,18 @@ class TradingBot:
         start = cfg.starting_cash
         goal = cfg.goal_equity()
         ret_pct = (end_equity - start) / start * 100 if start else 0.0
-        dd_dollars, dd_pct = self.max_drawdown(curve)
+        equity_series = [start] + [p["equity"] for p in curve]
+        fills = [f.to_dict() for f in self.broker.fills]
+        stats = metrics.summarize(equity_series, fills)
         return {
             "config": cfg.to_dict(),
             "days": days,
             "start_equity": round(start, 2),
             "end_equity": round(end_equity, 2),
             "return_pct": round(ret_pct, 2),
-            "max_drawdown": dd_dollars,
-            "max_drawdown_pct": dd_pct,
+            "max_drawdown_pct": stats["max_drawdown_pct"],
+            "metrics": stats,
+            "fees_paid": round(self.broker.fees_paid, 2),
             "goal_equity": round(goal, 2),
             "goal_progress_pct": round(min(100.0, end_equity / goal * 100), 2) if goal else 0.0,
             "goal_reached": end_equity >= goal,
