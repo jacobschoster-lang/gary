@@ -105,6 +105,15 @@ class BotConfig:
     fee_bps: float = 10.0  # commission/spread per trade, in basis points (0.10%)
     slippage_bps: float = 5.0  # adverse fill vs. close, in basis points (0.05%)
 
+    # --- portfolio construction -------------------------------------------
+    # "per_symbol": trade each name on its own blended signal (original behavior).
+    # "cross_sectional": rank the universe by momentum and hold the top N.
+    selection_mode: str = "per_symbol"
+    top_n_positions: int = 3  # how many names to hold in cross-sectional mode
+    regime_ma: int = 0  # >0: only hold names above this moving average (trend filter)
+    vol_target: float = 0.0  # >0: size inversely to volatility toward this annual vol
+    vol_window: int = 20  # lookback for the volatility estimate
+
     # --- tunable knobs (optimizer searches over these) --------------------
     trailing_stop_pct: float = 0.0  # >0 lets winners run: exit on drop from peak
     allow_add_ons: bool = False  # pyramid into winners up to the position cap
@@ -152,6 +161,11 @@ class BotConfig:
             strategies=list(data.get("strategies") or base.strategies),
             fee_bps=num("fee_bps", base.fee_bps),
             slippage_bps=num("slippage_bps", base.slippage_bps),
+            selection_mode=str(data.get("selection_mode") or base.selection_mode),
+            top_n_positions=num("top_n_positions", base.top_n_positions, int),
+            regime_ma=num("regime_ma", base.regime_ma, int),
+            vol_target=num("vol_target", base.vol_target),
+            vol_window=num("vol_window", base.vol_window, int),
             trailing_stop_pct=num("trailing_stop_pct", base.trailing_stop_pct),
             allow_add_ons=bool(
                 data["allow_add_ons"]

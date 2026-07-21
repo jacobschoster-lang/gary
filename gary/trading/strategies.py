@@ -108,6 +108,31 @@ def signal_for(name: str, prices: list[float]) -> Signal:
     return fn(prices)
 
 
+def above_regime(prices: list[float], ma: int) -> bool:
+    """Trend filter: True if disabled (``ma<=0``) or price is at/above its SMA.
+
+    Conservative when there isn't enough history: returns False so we don't take
+    on risk before the regime is established.
+    """
+    if ma <= 0:
+        return True
+    sma = _sma(prices, ma)
+    if sma is None or not prices:
+        return False
+    return prices[-1] >= sma
+
+
+def momentum_score(prices: list[float], lookback: int = 10) -> float:
+    """Trailing return over ``lookback`` bars — the ranking key for cross-sectional
+    momentum. 0.0 if not computable."""
+    if len(prices) <= lookback:
+        return 0.0
+    past = prices[-1 - lookback]
+    if past <= 0:
+        return 0.0
+    return (prices[-1] - past) / past
+
+
 def signals_from_config(prices: list[float], cfg: Any) -> list[Signal]:
     """Run each enabled strategy with the tunable params from ``cfg``."""
     out: list[Signal] = []

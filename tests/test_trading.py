@@ -270,16 +270,62 @@ def test_next_bar_execution_fills_at_following_price():
     assert abs(buys[0].price - prices[34]) < 1e-9  # filled at bar 34, not bar 33
 
 
-# ---------- walk-forward optimizer ----------
-def test_optimizer_walk_forward_is_deterministic_and_reports_oos():
-    r1 = optimize(BotConfig(), days=30, use_live=False)
-    r2 = optimize(BotConfig(), days=30, use_live=False)
-    assert r1["tried"] == 48
-    # Deterministic out-of-sample result.
+# ---------- regime filter, cross-sectional, vol targeting ----------
+def test_regime_filter_exits_below_moving_average():
+    cfg = BotConfig(
+        universe=["NVDA"], strategies=["momentum"], regime_ma=20,
+        stop_loss_pct=0.90,  # keep the stop out of the way so we isolate the regime exit
+    )
+    broker = PaperBroker(cash=0.0)
+    broker.positions["NVDA"] = Position("NVDA", 10.0, avg_cost=100.0)
+    bot = TradingBot(cfg, broker, use_live=False)
+    # Last price (95) sits below the 20-bar SMA (~99.75) -> regime exit.
+    acts = bot.run_tick({"NVDA": [100.0] * 20 + [95.0]}, on="d1")
+    assert "NVDA" not in bot.broker.positions
+    assert any("regime" in a.get("reason", "") for a in acts)
+
+
+def test_cross_sectional_holds_only_top_n():
+    cfg = BotConfig(
+        universe=["A", "B", "C", "D"], selection_mode="cross_sectional", top_n_positions=2,
+        strategies=["momentum"],
+    )
+    bot = TradingBot(cfg, PaperBroker(cash=10_000.0), use_live=False)
+    history = {
+        "A": [100.0 + 3 * i for i in range(20)],   # strongest momentum
+        "B": [100.0 + 1.5 * i for i in range(20)],  # second
+        "C": [100.0 + 0.2 * i for i in range(20)],  # weak
+        "D": [100.0 - 2 * i for i in range(20)],    # negative -> never a candidate
+    }
+    bot.run_tick(history, on="d1")
+    held = set(bot.broker.positions)
+    assert held <= {"A", "B"}  # only the top-2 momentum names
+    assert "A" in held and "D" not in held
+
+
+def test_vol_targeting_sizes_smaller_for_higher_vol():
+    from gary.trading.risk import position_notional
+
+    low = position_notional(10_000, 10_000, 0.5, 0.0, asset_vol=0.01, vol_target=0.20)
+    high = position_notional(10_000, 10_000, 0.5, 0.0, asset_vol=0.05, vol_target=0.20)
+    assert high < low  # more volatile -> smaller position
+    # vol_target off -> falls back to strength * cap
+    assert position_notional(10_000, 10_000, 0.5, 0.0, strength=1.0) == 5000.0
+
+
+# ---------- rolling walk-forward optimizer ----------
+def test_optimizer_rolling_walk_forward_deterministic_with_mc():
+    r1 = optimize(BotConfig(), days=25, folds=3, use_live=False)
+    r2 = optimize(BotConfig(), days=25, folds=3, use_live=False)
+    assert r1["tried"] == 32
+    assert r1["folds"] == 3
+    assert len(r1["folds_detail"]) == 3
+    # Deterministic aggregate OOS.
     assert r1["out_of_sample"]["return_pct"] == r2["out_of_sample"]["return_pct"]
-    # Walk-forward reports both in-sample and honest OOS, plus a benchmark.
-    assert "in_sample" in r1 and "out_of_sample" in r1
-    assert "benchmark" in r1 and "overfit_gap_pct" in r1
+    # Reports in-sample, OOS, benchmark, Monte Carlo, and a leaderboard.
+    assert "in_sample" in r1 and "out_of_sample" in r1 and "benchmark" in r1
+    assert "monte_carlo" in r1 and "prob_reach_goal_pct" in r1["monte_carlo"]
+    assert "aggregate" in r1 and "overfit_gap_pct" in r1
     board = r1["leaderboard"]
     assert board and "train_return_pct" in board[0] and "test_return_pct" in board[0]
 
@@ -326,8 +372,8 @@ def test_api_trading_optimize(tmp_path, monkeypatch):
     body = resp.json()
     assert "optimization" in body
     opt = body["optimization"]
-    assert opt["tried"] == 48
-    assert "out_of_sample" in opt and "benchmark" in opt
+    assert opt["tried"] == 32
+    assert "out_of_sample" in opt and "benchmark" in opt and "monte_carlo" in opt
     assert len(opt["leaderboard"]) >= 1
     # The applied run carries the full metrics scorecard.
     assert "metrics" in body and "sharpe" in body["metrics"]

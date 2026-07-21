@@ -725,10 +725,15 @@ function renderTrading(data) {
   const exit = (cfg.trailing_stop_pct || 0) > 0
     ? `trailing stop ${(cfg.trailing_stop_pct * 100).toFixed(0)}% (let winners run)`
     : `take-profit ${((cfg.take_profit_pct || 0) * 100).toFixed(0)}%`;
+  const sel = cfg.selection_mode === 'cross_sectional'
+    ? `cross-sectional top-${cfg.top_n_positions}` : 'per-symbol';
+  const regime = (cfg.regime_ma || 0) > 0 ? `${cfg.regime_ma}d regime filter` : 'no regime filter';
+  const vt = (cfg.vol_target || 0) > 0 ? `vol target ${(cfg.vol_target * 100).toFixed(0)}%` : 'fixed sizing';
   document.getElementById('tb_active').textContent =
-    `Active strategy — exit: ${exit} · stop-loss ${((cfg.stop_loss_pct || 0) * 100).toFixed(0)}% · ` +
+    `Active strategy — ${sel} · ${regime} · ${vt} · exit: ${exit} · ` +
+    `stop-loss ${((cfg.stop_loss_pct || 0) * 100).toFixed(0)}% · ` +
     `max ${((cfg.max_position_pct || 0) * 100).toFixed(0)}%/position · ` +
-    `add-ons ${cfg.allow_add_ons ? 'on' : 'off'} · reserve skim ${((cfg.rebalance_profit_pct || 0) * 100).toFixed(0)}%`;
+    `reserve skim ${((cfg.rebalance_profit_pct || 0) * 100).toFixed(0)}%`;
 
   if (data.optimization) renderOptimization(data.optimization);
 
@@ -802,26 +807,45 @@ function renderOptimization(opt) {
     return;
   }
   const is = opt.in_sample || {}, oos = opt.out_of_sample || {}, bench = opt.benchmark || {};
+  const agg = opt.aggregate || {}, mc = opt.monte_carlo || {};
   document.getElementById('tb_optim_summary').innerHTML =
-    `Walk-forward: tuned on ${opt.train_days} train days (objective: ${esc(opt.objective || 'sharpe')}), ` +
-    `reported on ${opt.test_days} <strong>out-of-sample</strong> days across ${opt.tried} configs. ` +
+    `Rolling walk-forward: ${opt.folds} folds, tuned on ${opt.train_days} train days ` +
+    `(objective: ${esc(opt.objective || 'sharpe')}), each reported on ${opt.test_days} ` +
+    `<strong>out-of-sample</strong> days across ${opt.tried} configs. ` +
     `The applied stats above reflect the most recent window; the numbers below are the honest OOS test.` +
-    `<div style="margin-top:6px;">Beats buy &amp; hold out-of-sample: ` +
-    `<strong style="color:${opt.beats_benchmark ? 'var(--green)' : 'var(--red)'}">${opt.beats_benchmark ? 'yes' : 'no'}</strong> ` +
-    `· overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>`;
+    `<div style="margin-top:6px;">OOS positive in <strong>${agg.folds_positive || 0}/${opt.folds}</strong> folds · ` +
+    `beats buy &amp; hold in <strong>${agg.folds_beating_benchmark || 0}/${opt.folds}</strong> · ` +
+    `overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>`;
 
   colorPct(document.getElementById('tb_opt_base'), is.return_pct);
   colorPct(document.getElementById('tb_opt_best'), oos.return_pct);
   colorPct(document.getElementById('tb_opt_impr'), bench.return_pct);
   document.getElementById('tb_opt_dd').textContent = (oos.max_drawdown_pct || 0).toFixed(1) + '%';
 
+  document.getElementById('tb_mc_goal').textContent = (mc.prob_reach_goal_pct || 0).toFixed(1) + '%';
+  const ruinEl = document.getElementById('tb_mc_ruin');
+  ruinEl.textContent = (mc.risk_of_ruin_pct || 0).toFixed(1) + '%';
+  ruinEl.style.color = (mc.risk_of_ruin_pct || 0) > 10 ? 'var(--red)' : 'var(--green)';
+  document.getElementById('tb_mc_median').textContent = money(mc.median_final_equity);
+  document.getElementById('tb_mc_range').textContent =
+    money(mc.p5_final_equity) + ' – ' + money(mc.p95_final_equity);
+
+  document.getElementById('tb_folds').innerHTML = (opt.folds_detail || []).map(f => {
+    const p = f.params || {};
+    return `Fold ${f.fold}: train ${pct(f.train_return_pct)} → ` +
+      `<strong style="color:${(f.oos_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">OOS ${pct(f.oos_return_pct)}</strong> ` +
+      `(Sharpe ${(f.oos_sharpe || 0).toFixed(2)}) · ${esc(p.selection)}, ` +
+      `${p.regime_ma > 0 ? p.regime_ma + 'd regime' : 'no regime'}, ` +
+      `${p.vol_target > 0 ? 'vol-target' : 'fixed'}`;
+  }).join('<br>') || '—';
+
   const rows = (opt.leaderboard || []).map((r, i) => {
     const p = r.params || {};
     return `<tr style="border-top:1px solid ${GRID};${i === 0 ? 'font-weight:700;' : ''}">
       <td style="padding:6px 8px;">${i + 1}</td>
       <td style="padding:6px 8px;">${esc(p.exit)}</td>
+      <td style="padding:6px 8px;">${esc(p.selection === 'cross_sectional' ? 'cross-sec' : 'per-symbol')}</td>
       <td style="padding:6px 8px;">${((p.max_position_pct || 0) * 100).toFixed(0)}%</td>
-      <td style="padding:6px 8px;">${p.allow_add_ons ? 'yes' : 'no'}</td>
       <td style="padding:6px 8px;color:${(r.train_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.train_return_pct)}</td>
       <td style="padding:6px 8px;color:${(r.test_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.test_return_pct)}</td>
       <td style="padding:6px 8px;">${(r.sharpe || 0).toFixed(2)}</td>
