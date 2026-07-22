@@ -444,9 +444,9 @@ def _require_mcp() -> RobinhoodMcpBroker:
         raise HTTPException(
             status_code=400,
             detail=(
-                "Robinhood MCP not configured "
-                "(set ROBINHOOD_MCP_TOKEN; add "
-                f"{DEFAULT_MCP_URL} in Cursor Settings → Tools & MCPs)"
+                "Robinhood MCP not connected "
+                "(set ROBINHOOD_MCP_TOKEN; in Cursor: Settings → Tools & MCPs → "
+                f"Connect → {DEFAULT_MCP_URL})"
             ),
         )
     return mcp

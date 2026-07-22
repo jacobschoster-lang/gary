@@ -690,6 +690,28 @@ async function loadContentTrends() {
 // ---------- Trading ----------
 const pct = n => (Number(n || 0) >= 0 ? '+' : '') + Number(n || 0).toFixed(2) + '%';
 
+// Cursor deeplink: installs robinhood-trading MCP then user hits Connect for OAuth.
+const ROBINHOOD_MCP_URL = 'https://agent.robinhood.com/mcp/trading';
+const ROBINHOOD_MCP_DEEPLINK =
+  'cursor://anysphere.cursor-deeplink/mcp/install?name=robinhood-trading&config=' +
+  btoa(JSON.stringify({url: ROBINHOOD_MCP_URL}));
+
+function mcpConnect() {
+  const mcpEl = document.getElementById('tb_mcp');
+  try {
+    window.location.href = ROBINHOOD_MCP_DEEPLINK;
+  } catch (_) { /* fall through */ }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(ROBINHOOD_MCP_URL).catch(() => {});
+  }
+  if (mcpEl) {
+    mcpEl.textContent =
+      'Opening Cursor MCP install… After it appears, click Connect under Tools & MCPs, authorize Robinhood, then set ROBINHOOD_MCP_TOKEN. URL also copied: ' +
+      ROBINHOOD_MCP_URL;
+    mcpEl.style.color = 'var(--sky, #0ea5e9)';
+  }
+}
+
 function renderTrading(data) {
   const acct = data.account || {};
   const cfg = data.config || {};
@@ -724,16 +746,22 @@ function renderTrading(data) {
     (data.robinhood_mcp_configured ? ' · Robinhood MCP configured' : '');
 
   const mcpEl = document.getElementById('tb_mcp');
+  const mcpBtn = document.getElementById('tb_mcp_connect');
+  const mcpRefresh = document.getElementById('tb_mcp_refresh');
   if (mcpEl) {
     if (data.robinhood_mcp_configured) {
       const live = data.live_trading_enabled ? 'LIVE enabled' : 'live disabled (paper-safe)';
       mcpEl.textContent =
         `Robinhood MCP ready (${live}) · ${data.robinhood_mcp_url || 'agent.robinhood.com/mcp/trading'}`;
       mcpEl.style.color = data.live_trading_enabled ? 'var(--amber, #c9a227)' : 'var(--muted)';
+      if (mcpBtn) mcpBtn.textContent = 'Reconnect Robinhood MCP';
+      if (mcpRefresh) mcpRefresh.style.display = 'inline-block';
     } else {
       mcpEl.textContent =
-        'Robinhood MCP not configured — add agent.robinhood.com/mcp/trading in Cursor Tools & MCPs, then set ROBINHOOD_MCP_TOKEN.';
+        'Not connected — click Connect Robinhood MCP, then in Cursor: Settings → Tools & MCPs → Connect, authorize Robinhood, and set ROBINHOOD_MCP_TOKEN.';
       mcpEl.style.color = 'var(--muted)';
+      if (mcpBtn) mcpBtn.textContent = 'Connect Robinhood MCP';
+      if (mcpRefresh) mcpRefresh.style.display = 'none';
     }
   }
 

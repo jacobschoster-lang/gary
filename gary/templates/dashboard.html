@@ -204,6 +204,10 @@
           <code>ROBINHOOD_MCP_TOKEN</code> + <code>TRADING_LIVE=1</code> are set.
         </p>
         <div id="trading_alert" class="alert alert-error" style="display:none;"></div>
+        <div class="row" style="margin-top:8px;margin-bottom:8px;">
+          <button id="tb_mcp_connect" type="button" class="btn-sky" onclick="mcpConnect()">Connect Robinhood MCP</button>
+          <button id="tb_mcp_refresh" type="button" class="btn-slate" onclick="loadTrading()" style="display:none;">Refresh MCP status</button>
+        </div>
         <div class="muted" id="tb_mcp" style="font-size:12px;margin-bottom:8px;"></div>
         <div class="stats">
           <div class="stat"><div class="k">Equity</div><div class="v" id="tb_equity">—</div></div>
@@ -368,6 +372,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=10"></script>
+  <script src="/static/dashboard.js?v=11"></script>
 </body>
 </html>

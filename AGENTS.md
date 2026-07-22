@@ -132,9 +132,10 @@ Trading bot (paper):
   `ROBINHOOD_MCP_ACCOUNT` (auto-picked from agentic accounts otherwise). Injectable
   `caller(tool, args)` for tests / Cursor `CallMcpTool` forwarding. Tool names
   overridable via `ROBINHOOD_MCP_TOOL_*`. Repo ships `.cursor/mcp.json` pointing
-  at the official URL — authenticate in Cursor Settings → Tools & MCPs (desktop
-  IDE; cloud agents do not get Robinhood MCP by default). Read/review/place HTTP
-  seams: `GET /api/trading/mcp/portfolio`, `POST /api/trading/mcp/quotes`,
+  at the official URL. In Cursor: Settings → Tools & MCPs → **Connect** (desktop
+  IDE OAuth; cloud agents do not get Robinhood MCP by default). Dashboard Trading
+  tab has a **Connect Robinhood MCP** button (Cursor deeplink). Read/review/place
+  HTTP seams: `GET /api/trading/mcp/portfolio`, `POST /api/trading/mcp/quotes`,
   `POST /api/trading/mcp/review`, `POST /api/trading/mcp/place`. Engine→live
   routing is still not wired; the bot stays on `PaperBroker` until deliberately
   switched.
