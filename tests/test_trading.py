@@ -541,7 +541,10 @@ def test_robinhood_mcp_review_before_place_and_reads():
 
     calls: list = []
     broker = RobinhoodMcpBroker(
-        token="tok", live_enabled=True, caller=_mcp_fake_caller(calls),
+        token="tok",
+        live_enabled=True,
+        account_number="AGENTIC-1",
+        caller=_mcp_fake_caller(calls),
     )
     review = broker.review_order("MSFT", "buy", dollar_amount=250.0)
     assert review["estimated_cost"] == 100.0
@@ -554,6 +557,11 @@ def test_robinhood_mcp_review_before_place_and_reads():
     portfolio = broker.get_portfolio()
     assert portfolio["buying_power"] == 10_000.0
 
+    # Without a pinned account, resolve_account uses get_accounts.
+    calls.clear()
+    auto = RobinhoodMcpBroker(token="tok", caller=_mcp_fake_caller(calls))
+    assert auto.resolve_account() == "AGENTIC-1"
+    assert calls[0][0] == "get_accounts"
 
 def test_robinhood_mcp_refuses_orders_when_not_live():
     from gary.trading import RobinhoodMcpBroker
