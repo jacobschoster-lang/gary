@@ -42,6 +42,15 @@ from gary.pipeline import ContentPipeline
 from gary.realestate import search_listings
 from gary.render import render_story
 from gary.render.preview_cache import get_or_render
+from gary.trading import (
+    BotConfig,
+    RobinhoodCryptoBroker,
+    RobinhoodMcpBroker,
+    TradingBot,
+    TradingStore,
+    optimize,
+)
+from gary.trading.robinhood_mcp import DEFAULT_MCP_URL, RobinhoodMcpError
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -57,6 +66,7 @@ plaid_tokens = PlaidTokenStore()
 pipeline = ContentPipeline()
 content_store = ContentStore()
 content_store.hydrate_publisher(pipeline.publisher)
+trading_store = TradingStore()
 _PLAID_NOT_CONFIGURED = "Plaid not configured (set PLAID_CLIENT_ID/SECRET)"
 
 _STATIC = Path(__file__).parent / "static"
@@ -399,6 +409,164 @@ def load_sample_finance() -> dict[str, Any]:
     record_snapshot(profile)
     finance_store.save(profile)
     return _finance_payload(profile)
+
+
+class TradingRunIn(BaseModel):
+    days: int | None = Field(default=None, ge=1, le=365, description="Days to simulate")
+
+
+class TradingConfigIn(BaseModel):
+    starting_cash: float = Field(default=10_000.0, gt=0)
+    goal_multiple: float = Field(default=2.0, gt=1)
+    horizon_days: int = Field(default=30, ge=1, le=365)
+    take_profit_pct: float = Field(default=0.30, gt=0)
+    stop_loss_pct: float = Field(default=0.15, gt=0)
+    max_position_pct: float = Field(default=0.25, gt=0, le=1)
+    rebalance_profit_pct: float = Field(default=0.50, ge=0, le=1)
+
+
+def _trading_live_flags() -> dict[str, Any]:
+    live = RobinhoodCryptoBroker.from_env()
+    mcp = RobinhoodMcpBroker.from_env()
+    live_on = bool((live and live.live_enabled) or (mcp and mcp.live_enabled))
+    return {
+        "robinhood_configured": live is not None,
+        "robinhood_mcp_configured": mcp is not None,
+        "robinhood_mcp_url": DEFAULT_MCP_URL,
+        "live_trading_enabled": live_on,
+        "mode": "paper",
+    }
+
+
+def _require_mcp() -> RobinhoodMcpBroker:
+    mcp = RobinhoodMcpBroker.from_env()
+    if mcp is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Robinhood MCP not connected "
+                "(set ROBINHOOD_MCP_TOKEN; in Cursor: Settings → Tools & MCPs → "
+                f"Connect → {DEFAULT_MCP_URL})"
+            ),
+        )
+    return mcp
+
+
+@app.get("/api/trading/status")
+def trading_status() -> dict[str, Any]:
+    config, broker = trading_store.load()
+    bot = TradingBot(config=config, broker=broker)
+    payload = bot.status()
+    payload.update(_trading_live_flags())
+    payload["has_run"] = trading_store.exists()
+    payload["forward_equity"] = trading_store.equity_history()
+    return payload
+
+
+@app.post("/api/trading/run")
+def trading_run(req: TradingRunIn) -> dict[str, Any]:
+    config, _ = trading_store.load()
+    bot = TradingBot(config=config)
+    report = bot.simulate(req.days)
+    trading_store.save(config, bot.broker)
+    report.update(_trading_live_flags())
+    return report
+
+
+@app.post("/api/trading/optimize")
+def trading_optimize(req: TradingRunIn) -> dict[str, Any]:
+    """Walk-forward optimize (train/test split), apply the best config on paper."""
+    config, _ = trading_store.load()
+    result = optimize(base=config, days=req.days)
+    best_cfg = BotConfig.from_dict(result["best_config"])
+    bot = TradingBot(config=best_cfg)
+    report = bot.simulate(req.days)
+    trading_store.save(best_cfg, bot.broker)
+    result.pop("best_report", None)  # trim nested report; UI uses the applied run
+    report["optimization"] = result
+    report.update(_trading_live_flags())
+    return report
+
+
+@app.post("/api/trading/reset")
+def trading_reset(req: TradingConfigIn) -> dict[str, Any]:
+    config = BotConfig.from_dict(req.model_dump())
+    trading_store.reset(config)
+    bot = TradingBot(config=config)
+    payload = bot.status()
+    payload.update(_trading_live_flags())
+    payload["has_run"] = True
+    return payload
+
+
+class McpQuoteIn(BaseModel):
+    symbols: list[str] = Field(..., min_length=1, max_length=20)
+
+
+class McpOrderIn(BaseModel):
+    symbol: str = Field(..., min_length=1)
+    side: str = Field(..., pattern="^(buy|sell)$")
+    quantity: float | None = Field(default=None, gt=0)
+    dollar_amount: float | None = Field(default=None, gt=0)
+    order_type: str = Field(default="market", pattern="^(market|limit)$")
+    limit_price: float | None = Field(default=None, gt=0)
+    skip_review: bool = False
+
+
+@app.get("/api/trading/mcp/portfolio")
+def trading_mcp_portfolio() -> dict[str, Any]:
+    """Read agentic account portfolio via Robinhood MCP (requires token)."""
+    mcp = _require_mcp()
+    try:
+        return {"portfolio": mcp.get_portfolio(), "positions": mcp.get_equity_positions()}
+    except RobinhoodMcpError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/trading/mcp/quotes")
+def trading_mcp_quotes(req: McpQuoteIn) -> dict[str, Any]:
+    mcp = _require_mcp()
+    try:
+        return {"quotes": mcp.get_equity_quotes(req.symbols)}
+    except RobinhoodMcpError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/trading/mcp/review")
+def trading_mcp_review(req: McpOrderIn) -> dict[str, Any]:
+    """Simulate an equity order via ``review_equity_order`` (no fill)."""
+    mcp = _require_mcp()
+    try:
+        review = mcp.review_order(
+            req.symbol,
+            req.side,
+            quantity=req.quantity,
+            dollar_amount=req.dollar_amount,
+            order_type=req.order_type,
+            limit_price=req.limit_price,
+        )
+    except RobinhoodMcpError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"review": review}
+
+
+@app.post("/api/trading/mcp/place")
+def trading_mcp_place(req: McpOrderIn) -> dict[str, Any]:
+    """Place an equity order via MCP. Requires TRADING_LIVE=1."""
+    mcp = _require_mcp()
+    try:
+        order = mcp.place_order(
+            req.symbol,
+            req.side,
+            quantity=req.quantity,
+            dollar_amount=req.dollar_amount,
+            order_type=req.order_type,
+            limit_price=req.limit_price,
+            skip_review=req.skip_review,
+        )
+    except RobinhoodMcpError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"order": order}
 
 
 @app.get("/api/realestate")
