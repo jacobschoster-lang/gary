@@ -21,6 +21,7 @@
       <button class="tab active" data-tab="overview" type="button">Overview</button>
       <button class="tab" data-tab="finances" type="button">Finances</button>
       <button class="tab" data-tab="property" type="button">Property</button>
+      <button class="tab" data-tab="trading" type="button">Trading</button>
       <button class="tab" data-tab="content" type="button">Content</button>
     </nav>
 
@@ -191,6 +192,108 @@
     </section>
 
     <!-- CONTENT -->
+    <section id="tab-trading" class="tab-panel">
+      <div class="card">
+        <h2>Paper trading bot <span class="tag" style="vertical-align:middle;">PAPER</span></h2>
+        <p class="muted" style="margin-top:0;">
+          Simulated Robinhood-style bot. Blends momentum, price-history (SMA crossover) and
+          mean-reversion signals; takes profit at +<span id="tb_tp">30</span>%, cuts losers at a
+          stop-loss, and rebalances 50% of realized gains into a lower-risk reserve. No real money
+          is traded. Live equities go through Robinhood's official MCP
+          (<code>agent.robinhood.com/mcp/trading</code>) only when
+          <code>ROBINHOOD_MCP_TOKEN</code> + <code>TRADING_LIVE=1</code> are set.
+        </p>
+        <div id="trading_alert" class="alert alert-error" style="display:none;"></div>
+        <div class="muted" id="tb_mcp" style="font-size:12px;margin-bottom:8px;"></div>
+        <div class="stats">
+          <div class="stat"><div class="k">Equity</div><div class="v" id="tb_equity">—</div></div>
+          <div class="stat"><div class="k">Goal (2×)</div><div class="v" id="tb_goal">—</div></div>
+          <div class="stat"><div class="k">Return</div><div class="v" id="tb_return">—</div></div>
+          <div class="stat"><div class="k">Realized P&amp;L</div><div class="v" id="tb_realized">—</div></div>
+        </div>
+        <div style="margin-top:12px;">
+          <div class="muted" style="font-size:13px;">Progress toward doubling</div>
+          <div style="background:var(--panel-2);border-radius:8px;height:16px;overflow:hidden;margin-top:4px;">
+            <div id="tb_progress_bar" style="height:100%;width:0%;background:var(--green);transition:width .4s;"></div>
+          </div>
+          <div class="muted" id="tb_progress_label" style="font-size:12px;margin-top:4px;">—</div>
+        </div>
+        <div class="row" style="margin-top:14px;">
+          <div class="field" style="flex:0 0 160px;margin-bottom:0;">
+            <label>Days to simulate</label>
+            <input id="tb_days" type="number" value="30" min="1" max="365" />
+          </div>
+          <button id="btn_run_bot" type="button" class="btn-green">Run paper bot</button>
+          <button id="btn_optimize_bot" type="button" class="btn-purple">Optimize strategy</button>
+          <button id="btn_reset_bot" type="button" class="btn-gray">Reset to $10k</button>
+        </div>
+        <div class="muted" id="tb_active" style="margin-top:8px;font-size:12px;"></div>
+        <div class="muted" id="tb_meta" style="margin-top:4px;font-size:12px;"></div>
+      </div>
+
+      <div id="tb_optim" class="card" style="display:none;background:var(--panel-2);">
+        <h2>Walk-forward optimization</h2>
+        <div id="tb_optim_summary" class="muted"></div>
+        <div class="stats" style="margin-top:10px;">
+          <div class="stat"><div class="k">In-sample return (avg)</div><div class="v" id="tb_opt_base">—</div></div>
+          <div class="stat"><div class="k">Out-of-sample (avg)</div><div class="v" id="tb_opt_best">—</div></div>
+          <div class="stat"><div class="k">Buy &amp; hold (OOS)</div><div class="v" id="tb_opt_impr">—</div></div>
+          <div class="stat"><div class="k">OOS max drawdown</div><div class="v" id="tb_opt_dd">—</div></div>
+        </div>
+
+        <h2 style="margin-top:14px;">Monte Carlo (out-of-sample trades, 2000 paths)</h2>
+        <div class="stats">
+          <div class="stat"><div class="k">P(reach 2×)</div><div class="v" id="tb_mc_goal">—</div></div>
+          <div class="stat"><div class="k">Risk of ruin</div><div class="v" id="tb_mc_ruin">—</div></div>
+          <div class="stat"><div class="k">Median outcome</div><div class="v" id="tb_mc_median">—</div></div>
+          <div class="stat"><div class="k">5–95% range</div><div class="v" id="tb_mc_range" style="font-size:14px;">—</div></div>
+        </div>
+
+        <h2 style="margin-top:14px;">Per-fold (train vs. out-of-sample)</h2>
+        <div id="tb_folds" class="muted" style="font-size:13px;"></div>
+
+        <h2 style="margin-top:14px;">Top configs (latest fold) — train vs. OOS</h2>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="text-align:left;color:var(--muted);">
+              <th style="padding:6px 8px;">#</th><th style="padding:6px 8px;">Exit rule</th>
+              <th style="padding:6px 8px;">Selection</th><th style="padding:6px 8px;">Size</th>
+              <th style="padding:6px 8px;">Train return</th><th style="padding:6px 8px;">OOS return</th>
+              <th style="padding:6px 8px;">OOS Sharpe</th>
+            </tr></thead>
+            <tbody id="tb_leaderboard"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Equity curve</h2>
+          <div class="chart-wrap"><canvas id="chart_equity"></canvas></div>
+        </div>
+        <div class="card">
+          <h2>Open positions</h2>
+          <div id="tb_positions"><div class="muted">Run the bot to open positions.</div></div>
+          <h2 style="margin-top:16px;">Reserve (lower-risk)</h2>
+          <div class="muted" id="tb_reserve">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Recent trades</h2>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="text-align:left;color:var(--muted);">
+              <th style="padding:6px 8px;">Date</th><th style="padding:6px 8px;">Side</th>
+              <th style="padding:6px 8px;">Symbol</th><th style="padding:6px 8px;">Amount</th>
+              <th style="padding:6px 8px;">P&amp;L</th><th style="padding:6px 8px;">Reason</th>
+            </tr></thead>
+            <tbody id="tb_trades"><tr><td class="muted" colspan="6" style="padding:8px;">No trades yet.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section id="tab-content" class="tab-panel">
       <div class="card">
         <h2>Platform status</h2>
@@ -265,6 +368,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=4"></script>
+  <script src="/static/dashboard.js?v=10"></script>
 </body>
 </html>
