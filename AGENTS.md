@@ -121,7 +121,15 @@ Trading bot (paper):
  `TradingStore.record_equity()` keeps a de-duped daily equity history (exposed at
  `/api/trading/status` as `forward_equity`). `python -m gary.jobs.trade_daily`
  runs one forward step for a scheduler (paper-only, safe; writes a manifest to
- `out/`). It never sends real orders.
+ `out/`). It never sends real orders. `.github/workflows/trade-daily.yml` runs it
+ on weekdays (live prices, paper execution) and force-commits the updated
+ `finance_data/trading.json` back so the forward record persists across runs
+ (scheduled workflows only run once merged to the default branch). The dashboard
+ renders this record in the "Forward paper track record" card from
+ `status.forward_equity`.
+- The optimizer also returns a `cost_sensitivity` sweep (chosen config's OOS
+ return at 1x/2x/3x trading costs) so you can see whether an edge survives higher
+ frictions.
 - Live via Robinhood MCP (`gary/trading/robinhood_mcp.py`, preferred live path):
  `RobinhoodMcpBroker` routes the bot's orders to Robinhood's official MCP trading
  server (`https://agent.robinhood.com/mcp/trading`) as tool calls. It implements
