@@ -2,7 +2,7 @@ const money = n => '$' + Number(n || 0).toLocaleString(undefined, {maximumFracti
 const GRID = 'rgba(255,255,255,0.06)';
 const PALETTE = ['#3b82f6','#22c55e','#facc15','#f87171','#8b5cf6','#0ea5e9','#fb923c','#14b8a6','#ec4899'];
 window._charts = window._charts || {};
-const _tabLoaded = { property: false, finances: false, content: false };
+const _tabLoaded = { property: false, finances: false, content: false, trading: false };
 
 function esc(s) {
   return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -48,6 +48,10 @@ function showTab(name) {
     _tabLoaded.content = true;
     loadContentTrends();
   }
+  if (name === 'trading' && !_tabLoaded.trading) {
+    _tabLoaded.trading = true;
+    loadTrading();
+  }
   location.hash = name;
 }
 
@@ -81,7 +85,7 @@ document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => showTab(tab.dataset.tab));
 });
 const initialTab = (location.hash || '#overview').replace('#', '') || 'overview';
-showTab(['overview','finances','property','content'].includes(initialTab) ? initialTab : 'overview');
+showTab(['overview','finances','property','content','trading'].includes(initialTab) ? initialTab : 'overview');
 
 // ---------- Content platform ----------
 async function generate() {
@@ -683,6 +687,251 @@ async function loadContentTrends() {
   ]);
 }
 
+// ---------- Trading ----------
+const pct = n => (Number(n || 0) >= 0 ? '+' : '') + Number(n || 0).toFixed(2) + '%';
+
+function renderTrading(data) {
+  const acct = data.account || {};
+  const cfg = data.config || {};
+  document.getElementById('tb_tp').textContent = Math.round((cfg.take_profit_pct || 0.3) * 100);
+  document.getElementById('tb_equity').textContent = money(acct.equity);
+  document.getElementById('tb_goal').textContent = money(data.goal_equity);
+  const retEl = document.getElementById('tb_return');
+  retEl.textContent = pct(data.return_pct);
+  retEl.style.color = (data.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+  const realEl = document.getElementById('tb_realized');
+  realEl.textContent = money(acct.realized_pnl);
+  realEl.style.color = (acct.realized_pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+
+  const progress = Math.max(0, Math.min(100, data.goal_progress_pct || 0));
+  document.getElementById('tb_progress_bar').style.width = progress + '%';
+  document.getElementById('tb_progress_bar').style.background =
+    data.goal_reached ? 'var(--green)' : 'var(--sky, #0ea5e9)';
+  document.getElementById('tb_progress_label').textContent =
+    `${money(acct.equity)} of ${money(data.goal_equity)} (${progress.toFixed(1)}%)` +
+    (data.goal_reached ? ' — goal reached!' : '');
+
+  document.getElementById('tb_reserve').textContent =
+    money(acct.reserve) + ' parked in a lower-risk reserve';
+  const m = data.metrics || {};
+  document.getElementById('tb_meta').innerHTML =
+    `Sharpe ${(m.sharpe || 0).toFixed(2)} · Calmar ${(m.calmar || 0).toFixed(2)} · ` +
+    `win rate ${(m.win_rate || 0).toFixed(0)}% · profit factor ${(m.profit_factor || 0).toFixed(2)} · ` +
+    `max drawdown ${(data.max_drawdown_pct || 0).toFixed(1)}% · fees ${money(data.fees_paid)}<br>` +
+    `${data.num_trades || 0} trades · turnover ${(m.turnover || 0).toFixed(1)}x · ${data.days || 0} days · ` +
+    `data: ${data.live_data ? 'live' : 'offline sample'} · mode: ${data.mode || 'paper'}` +
+    (data.robinhood_configured ? ' · Robinhood key detected' : '');
+
+  const exit = (cfg.trailing_stop_pct || 0) > 0
+    ? `trailing stop ${(cfg.trailing_stop_pct * 100).toFixed(0)}% (let winners run)`
+    : `take-profit ${((cfg.take_profit_pct || 0) * 100).toFixed(0)}%`;
+  const selNames = {
+    cross_sectional: `cross-sectional top-${cfg.top_n_positions}`,
+    long_short: `long/short ${cfg.top_n_positions}×2 (market-neutral)`,
+    buy_hold: 'smart buy & hold (regime-filtered)',
+    per_symbol: 'per-symbol',
+  };
+  const sel = selNames[cfg.selection_mode] || 'per-symbol';
+  const turnover = (cfg.rebalance_every || 1) > 1 ? `rebalance every ${cfg.rebalance_every}d` : 'daily rebalance';
+  const regime = (cfg.regime_ma || 0) > 0 ? `${cfg.regime_ma}d regime filter` : 'no regime filter';
+  const vt = (cfg.vol_target || 0) > 0 ? `vol target ${(cfg.vol_target * 100).toFixed(0)}%` : 'fixed sizing';
+  document.getElementById('tb_active').textContent =
+    `Active strategy — ${sel} · ${turnover} · ${regime} · ${vt} · exit: ${exit} · ` +
+    `stop-loss ${((cfg.stop_loss_pct || 0) * 100).toFixed(0)}% · ` +
+    `max ${((cfg.max_position_pct || 0) * 100).toFixed(0)}%/position · ` +
+    `reserve skim ${((cfg.rebalance_profit_pct || 0) * 100).toFixed(0)}%`;
+
+  if (data.optimization) renderOptimization(data.optimization);
+
+  const posEl = document.getElementById('tb_positions');
+  const positions = acct.positions || [];
+  if (!positions.length) {
+    posEl.innerHTML = '<div class="muted">No open positions.</div>';
+  } else {
+    posEl.innerHTML = positions.map(p => {
+      const color = (p.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+      return `<div class="row" style="justify-content:space-between;padding:6px 0;border-bottom:1px solid ${GRID};">
+        <div><strong>${esc(p.symbol)}</strong> <span class="muted">${Number(p.quantity).toFixed(4)} @ ${money(p.avg_cost)}</span></div>
+        <div style="text-align:right;">${money(p.market_value)} <span style="color:${color}">(${pct(p.return_pct)})</span></div>
+      </div>`;
+    }).join('');
+  }
+
+  const trades = (data.trades || []).slice().reverse();
+  const tbody = document.getElementById('tb_trades');
+  if (!trades.length) {
+    tbody.innerHTML = '<tr><td class="muted" colspan="6" style="padding:8px;">No trades yet.</td></tr>';
+  } else {
+    tbody.innerHTML = trades.map(t => {
+      const sideColor = t.side === 'buy' ? 'var(--sky, #0ea5e9)' : 'var(--red)';
+      const pnl = t.realized_pnl ? `<span style="color:${t.realized_pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${money(t.realized_pnl)}</span>` : '—';
+      return `<tr style="border-top:1px solid ${GRID};">
+        <td style="padding:6px 8px;">${esc(t.date)}</td>
+        <td style="padding:6px 8px;color:${sideColor};text-transform:uppercase;">${esc(t.side)}</td>
+        <td style="padding:6px 8px;"><strong>${esc(t.symbol)}</strong></td>
+        <td style="padding:6px 8px;">${money(t.notional)}</td>
+        <td style="padding:6px 8px;">${pnl}</td>
+        <td style="padding:6px 8px;color:var(--muted);">${esc(t.reason || '')}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  const curve = data.equity_curve || [];
+  if (curve.length) {
+    chart('chart_equity', {
+      type: 'line',
+      data: {
+        labels: curve.map(c => c.date),
+        datasets: [
+          { label: 'Equity', data: curve.map(c => c.equity), borderColor: PALETTE[1],
+            backgroundColor: 'rgba(34,197,94,0.12)', fill: true, tension: 0.25, pointRadius: 0 },
+          { label: 'Goal', data: curve.map(() => data.goal_equity), borderColor: PALETTE[3],
+            borderDash: [6, 6], pointRadius: 0, fill: false },
+        ],
+      },
+      options: {
+        plugins: { legend: { labels: { color: '#cbd5e1' } } },
+        scales: {
+          x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: GRID } },
+          y: { ticks: { color: '#94a3b8', callback: v => money(v) }, grid: { color: GRID } },
+        },
+      },
+    });
+  }
+}
+
+function colorPct(el, v) {
+  if (!el) return;
+  el.textContent = pct(v);
+  el.style.color = (v || 0) >= 0 ? 'var(--green)' : 'var(--red)';
+}
+
+function setText(id, text) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = text;
+}
+
+function renderOptimization(opt) {
+  const box = document.getElementById('tb_optim');
+  box.style.display = 'block';
+  if (opt.degenerate) {
+    document.getElementById('tb_optim_summary').textContent = opt.note || 'Ran in-sample.';
+    return;
+  }
+  const is = opt.in_sample || {}, oos = opt.out_of_sample || {}, bench = opt.benchmark || {};
+  const agg = opt.aggregate || {}, mc = opt.monte_carlo || {}, selInfo = opt.selection || {};
+  const selLine = selInfo.deflated_sharpe != null
+    ? `<div style="margin-top:6px;">Robust pick (train mean − stdev). Sharpe deflated for ` +
+      `${selInfo.n_trials} trials: <strong>${(selInfo.observed_sharpe || 0).toFixed(2)} → ` +
+      `${(selInfo.deflated_sharpe || 0).toFixed(2)}</strong> · purge/embargo: ${opt.embargo || 0} bars.</div>`
+    : '';
+  document.getElementById('tb_optim_summary').innerHTML =
+    `Purged rolling walk-forward: ${opt.folds} folds, tuned on ${opt.train_days} train days ` +
+    `(objective: ${esc(opt.objective || 'robustness')}), each reported on ${opt.test_days} ` +
+    `<strong>out-of-sample</strong> days across ${opt.tried} configs. ` +
+    `The applied stats above reflect the most recent window; the numbers below are the honest OOS test.` +
+    `<div style="margin-top:6px;">OOS positive in <strong>${agg.folds_positive || 0}/${opt.folds}</strong> folds · ` +
+    `beats buy &amp; hold in <strong>${agg.folds_beating_benchmark || 0}/${opt.folds}</strong> · ` +
+    `overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>` +
+    selLine;
+
+  colorPct(document.getElementById('tb_opt_base'), is.return_pct);
+  colorPct(document.getElementById('tb_opt_best'), oos.return_pct);
+  colorPct(document.getElementById('tb_opt_impr'), bench.return_pct);
+  setText('tb_opt_dd', (oos.max_drawdown_pct || 0).toFixed(1) + '%');
+
+  setText('tb_mc_goal', (mc.prob_reach_goal_pct || 0).toFixed(1) + '%');
+  const ruinEl = document.getElementById('tb_mc_ruin');
+  if (ruinEl) {
+    ruinEl.textContent = (mc.risk_of_ruin_pct || 0).toFixed(1) + '%';
+    ruinEl.style.color = (mc.risk_of_ruin_pct || 0) > 10 ? 'var(--red)' : 'var(--green)';
+  }
+  setText('tb_mc_median', money(mc.median_final_equity));
+  setText('tb_mc_range', money(mc.p5_final_equity) + ' – ' + money(mc.p95_final_equity));
+
+  const foldsEl = document.getElementById('tb_folds');
+  if (foldsEl) foldsEl.innerHTML = (opt.folds_detail || []).map(f => {
+    const p = f.params || {};
+    return `Fold ${f.fold}: train ${pct(f.train_return_pct)} → ` +
+      `<strong style="color:${(f.oos_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">OOS ${pct(f.oos_return_pct)}</strong> ` +
+      `(Sharpe ${(f.oos_sharpe || 0).toFixed(2)}) · ${esc(p.selection)}, ` +
+      `${p.regime_ma > 0 ? p.regime_ma + 'd regime' : 'no regime'}, ` +
+      `${p.vol_target > 0 ? 'vol-target' : 'fixed'}`;
+  }).join('<br>') || '—';
+
+  const rows = (opt.leaderboard || []).map((r, i) => {
+    const p = r.params || {};
+    return `<tr style="border-top:1px solid ${GRID};${i === 0 ? 'font-weight:700;' : ''}">
+      <td style="padding:6px 8px;">${i + 1}</td>
+      <td style="padding:6px 8px;">${esc(p.exit)}</td>
+      <td style="padding:6px 8px;">${esc({cross_sectional: 'cross-sec', long_short: 'long/short', buy_hold: 'buy&hold', per_symbol: 'per-symbol'}[p.selection] || p.selection)}</td>
+      <td style="padding:6px 8px;">${((p.max_position_pct || 0) * 100).toFixed(0)}%</td>
+      <td style="padding:6px 8px;color:${(r.train_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.train_return_pct)}</td>
+      <td style="padding:6px 8px;color:${(r.test_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.test_return_pct)}</td>
+      <td style="padding:6px 8px;">${(r.sharpe || 0).toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('tb_leaderboard').innerHTML = rows ||
+    '<tr><td class="muted" colspan="7" style="padding:8px;">No results.</td></tr>';
+}
+
+async function loadTrading() {
+  try {
+    showAlert('trading_alert', '');
+    const data = await apiFetch('/api/trading/status');
+    renderTrading(data);
+  } catch (e) {
+    showAlert('trading_alert', e.message);
+  }
+}
+
+async function optimizeBot() {
+  try {
+    showAlert('trading_alert', '');
+    const days = parseInt(document.getElementById('tb_days').value, 10) || 30;
+    const data = await apiFetch('/api/trading/optimize', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days }),
+    });
+    renderTrading(data);
+  } catch (e) {
+    showAlert('trading_alert', e.message);
+  }
+}
+
+async function runBot() {
+  try {
+    showAlert('trading_alert', '');
+    const days = parseInt(document.getElementById('tb_days').value, 10) || 30;
+    const data = await apiFetch('/api/trading/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days }),
+    });
+    renderTrading(data);
+  } catch (e) {
+    showAlert('trading_alert', e.message);
+  }
+}
+
+async function resetBot() {
+  try {
+    showAlert('trading_alert', '');
+    const data = await apiFetch('/api/trading/reset', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    renderTrading(data);
+  } catch (e) {
+    showAlert('trading_alert', e.message);
+  }
+}
+
+document.getElementById('btn_run_bot')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_run_bot'), runBot));
+document.getElementById('btn_optimize_bot')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_optimize_bot'), optimizeBot));
+document.getElementById('btn_reset_bot')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_reset_bot'), resetBot));
+
 // ---------- init ----------
 async function initDashboard() {
   loadReFilters();
@@ -699,6 +948,10 @@ async function initDashboard() {
   if (tab === 'content') {
     _tabLoaded.content = true;
     loadContentTrends();
+  }
+  if (tab === 'trading') {
+    _tabLoaded.trading = true;
+    loadTrading();
   }
 }
 initDashboard();

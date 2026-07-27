@@ -42,6 +42,14 @@ from gary.pipeline import ContentPipeline
 from gary.realestate import search_listings
 from gary.render import render_story
 from gary.render.preview_cache import get_or_render
+from gary.trading import (
+    BotConfig,
+    RobinhoodCryptoBroker,
+    RobinhoodMcpBroker,
+    TradingBot,
+    TradingStore,
+    optimize,
+)
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -57,6 +65,7 @@ plaid_tokens = PlaidTokenStore()
 pipeline = ContentPipeline()
 content_store = ContentStore()
 content_store.hydrate_publisher(pipeline.publisher)
+trading_store = TradingStore()
 _PLAID_NOT_CONFIGURED = "Plaid not configured (set PLAID_CLIENT_ID/SECRET)"
 
 _STATIC = Path(__file__).parent / "static"
@@ -399,6 +408,76 @@ def load_sample_finance() -> dict[str, Any]:
     record_snapshot(profile)
     finance_store.save(profile)
     return _finance_payload(profile)
+
+
+class TradingRunIn(BaseModel):
+    days: int | None = Field(default=None, ge=1, le=365, description="Days to simulate")
+
+
+class TradingConfigIn(BaseModel):
+    starting_cash: float = Field(default=10_000.0, gt=0)
+    goal_multiple: float = Field(default=2.0, gt=1)
+    horizon_days: int = Field(default=30, ge=1, le=365)
+    take_profit_pct: float = Field(default=0.30, gt=0)
+    stop_loss_pct: float = Field(default=0.15, gt=0)
+    max_position_pct: float = Field(default=0.25, gt=0, le=1)
+    rebalance_profit_pct: float = Field(default=0.50, ge=0, le=1)
+
+
+@app.get("/api/trading/status")
+def trading_status() -> dict[str, Any]:
+    config, broker = trading_store.load()
+    bot = TradingBot(config=config, broker=broker)
+    payload = bot.status()
+    live = RobinhoodCryptoBroker.from_env()
+    mcp = RobinhoodMcpBroker.from_env()
+    payload["robinhood_configured"] = live is not None
+    payload["robinhood_mcp_configured"] = mcp is not None
+    live_on = bool((live and live.live_enabled) or (mcp and mcp.live_enabled))
+    payload["live_trading_enabled"] = live_on
+    payload["mode"] = "paper"
+    payload["has_run"] = trading_store.exists()
+    payload["forward_equity"] = trading_store.equity_history()
+    return payload
+
+
+@app.post("/api/trading/run")
+def trading_run(req: TradingRunIn) -> dict[str, Any]:
+    config, _ = trading_store.load()
+    bot = TradingBot(config=config)
+    report = bot.simulate(req.days)
+    trading_store.save(config, bot.broker)
+    report["robinhood_configured"] = RobinhoodCryptoBroker.from_env() is not None
+    report["mode"] = "paper"
+    return report
+
+
+@app.post("/api/trading/optimize")
+def trading_optimize(req: TradingRunIn) -> dict[str, Any]:
+    """Walk-forward optimize (train/test split), apply the best config on paper."""
+    config, _ = trading_store.load()
+    result = optimize(base=config, days=req.days)
+    best_cfg = BotConfig.from_dict(result["best_config"])
+    bot = TradingBot(config=best_cfg)
+    report = bot.simulate(req.days)
+    trading_store.save(best_cfg, bot.broker)
+    result.pop("best_report", None)  # trim nested report; UI uses the applied run
+    report["optimization"] = result
+    report["robinhood_configured"] = RobinhoodCryptoBroker.from_env() is not None
+    report["mode"] = "paper"
+    return report
+
+
+@app.post("/api/trading/reset")
+def trading_reset(req: TradingConfigIn) -> dict[str, Any]:
+    config = BotConfig.from_dict(req.model_dump())
+    trading_store.reset(config)
+    bot = TradingBot(config=config)
+    payload = bot.status()
+    payload["robinhood_configured"] = RobinhoodCryptoBroker.from_env() is not None
+    payload["mode"] = "paper"
+    payload["has_run"] = True
+    return payload
 
 
 @app.get("/api/realestate")
