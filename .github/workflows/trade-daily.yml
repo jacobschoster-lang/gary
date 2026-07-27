@@ -1,0 +1,62 @@
+name: Daily paper trade
+
+# Advances the persisted PAPER trading account one step each weekday after the
+# US market close and records an equity snapshot, building a real forward track
+# record over time. This is paper-only and never sends real orders — going live
+# requires the env-gated Robinhood MCP seam (TRADING_LIVE=1 + ROBINHOOD_MCP_TOKEN),
+# which is intentionally not enabled here.
+on:
+  schedule:
+    - cron: "15 21 * * 1-5"  # 21:15 UTC (~after US market close), weekdays
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # to commit the updated paper-trading state back to the repo
+
+concurrency:
+  group: trade-daily
+  cancel-in-progress: false
+
+jobs:
+  trade-daily:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run daily paper step (live prices, paper execution)
+        env:
+          GARY_TRADING_FILE: finance_data/trading.json
+        run: |
+          python -m gary.jobs.trade_daily --out out
+
+      - name: Persist forward paper state
+        env:
+          GARY_TRADING_FILE: finance_data/trading.json
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # finance_data/ is gitignored; force-add so the forward record persists.
+          git add -f finance_data/trading.json
+          if git diff --cached --quiet; then
+            echo "No trading-state change to commit."
+          else
+            git commit -m "chore(trading): daily paper step [skip ci]"
+            git push
+          fi
+
+      - name: Upload run manifest
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-daily-manifest
+          path: out/
+          if-no-files-found: ignore

@@ -263,9 +263,16 @@
         </div>
       </div>
 
+      <div id="tb_forward_card" class="card" style="display:none;">
+        <h2>Forward paper track record</h2>
+        <p class="muted" style="margin-top:0;">Real forward equity recorded by the daily paper job
+          (<code>gary.jobs.trade_daily</code>) — distinct from the backtest below.</p>
+        <div class="chart-wrap"><canvas id="chart_forward"></canvas></div>
+      </div>
+
       <div class="grid2">
         <div class="card">
-          <h2>Equity curve</h2>
+          <h2>Backtest equity curve</h2>
           <div class="chart-wrap"><canvas id="chart_equity"></canvas></div>
         </div>
         <div class="card">
@@ -365,6 +372,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=9"></script>
+  <script src="/static/dashboard.js?v=10"></script>
 </body>
 </html>
