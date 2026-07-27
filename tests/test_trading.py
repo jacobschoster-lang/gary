@@ -374,6 +374,10 @@ def test_optimizer_purged_walk_forward_with_selection_and_mc():
     assert "benchmark" in r1 and "monte_carlo" in r1
     board = r1["leaderboard"]
     assert board and "robustness" in board[0] and "test_return_pct" in board[0]
+    # Cost-sensitivity sweep: 1x/2x/3x costs, fees non-decreasing with cost.
+    cost = r1["cost_sensitivity"]
+    assert [c["cost_multiple"] for c in cost] == [1.0, 2.0, 3.0]
+    assert cost[2]["fees_paid"] >= cost[0]["fees_paid"]
 
 
 # ---------- smart buy & hold + forward stepping ----------

@@ -741,6 +741,7 @@ function renderTrading(data) {
     `max ${((cfg.max_position_pct || 0) * 100).toFixed(0)}%/position · ` +
     `reserve skim ${((cfg.rebalance_profit_pct || 0) * 100).toFixed(0)}%`;
 
+  if (data.forward_equity) renderForwardEquity(data.forward_equity);
   if (data.optimization) renderOptimization(data.optimization);
 
   const posEl = document.getElementById('tb_positions');
@@ -811,6 +812,31 @@ function setText(id, text) {
   if (el) el.textContent = text;
 }
 
+function renderForwardEquity(history) {
+  const card = document.getElementById('tb_forward_card');
+  if (!card) return;
+  if (!history || !history.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  chart('chart_forward', {
+    type: 'line',
+    data: {
+      labels: history.map(h => h.date),
+      datasets: [{
+        label: 'Forward paper equity', data: history.map(h => h.equity),
+        borderColor: PALETTE[5], backgroundColor: 'rgba(14,165,233,0.12)',
+        fill: true, tension: 0.2, pointRadius: 2,
+      }],
+    },
+    options: {
+      plugins: { legend: { labels: { color: '#cbd5e1' } } },
+      scales: {
+        x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: GRID } },
+        y: { ticks: { color: '#94a3b8', callback: v => money(v) }, grid: { color: GRID } },
+      },
+    },
+  });
+}
+
 function renderOptimization(opt) {
   const box = document.getElementById('tb_optim');
   box.style.display = 'block';
@@ -820,6 +846,11 @@ function renderOptimization(opt) {
   }
   const is = opt.in_sample || {}, oos = opt.out_of_sample || {}, bench = opt.benchmark || {};
   const agg = opt.aggregate || {}, mc = opt.monte_carlo || {}, selInfo = opt.selection || {};
+  const cost = opt.cost_sensitivity || [];
+  const costLine = cost.length
+    ? `<div style="margin-top:6px;">Cost sensitivity (OOS return at 1×/2×/3× costs): ` +
+      cost.map(c => `<strong>${pct(c.return_pct)}</strong>`).join(' → ') + `</div>`
+    : '';
   const selLine = selInfo.deflated_sharpe != null
     ? `<div style="margin-top:6px;">Robust pick (train mean − stdev). Sharpe deflated for ` +
       `${selInfo.n_trials} trials: <strong>${(selInfo.observed_sharpe || 0).toFixed(2)} → ` +
@@ -832,8 +863,8 @@ function renderOptimization(opt) {
     `The applied stats above reflect the most recent window; the numbers below are the honest OOS test.` +
     `<div style="margin-top:6px;">OOS positive in <strong>${agg.folds_positive || 0}/${opt.folds}</strong> folds · ` +
     `beats buy &amp; hold in <strong>${agg.folds_beating_benchmark || 0}/${opt.folds}</strong> · ` +
-    `overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>` +
-    selLine;
+      `overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>` +
+    selLine + costLine;
 
   colorPct(document.getElementById('tb_opt_base'), is.return_pct);
   colorPct(document.getElementById('tb_opt_best'), oos.return_pct);

@@ -56,6 +56,19 @@ def _run_cfg(cfg, series, bars, use_live):
     return report, realized
 
 
+def _cost_sensitivity(chosen_cfg, series, bars, use_live):
+    """Re-run the chosen config at 1x/2x/3x trading costs. If a small cost bump
+    erases the edge, it wasn't a real edge — this exposes that."""
+    out = []
+    for mult in (1.0, 2.0, 3.0):
+        cfg = replace(chosen_cfg, fee_bps=chosen_cfg.fee_bps * mult,
+                      slippage_bps=chosen_cfg.slippage_bps * mult)
+        rep, _ = _run_cfg(cfg, series, bars, use_live)
+        out.append({"cost_multiple": mult, "return_pct": rep.get("return_pct", 0.0),
+                    "fees_paid": rep.get("fees_paid", 0.0)})
+    return out
+
+
 def _buy_and_hold(cfg, series, bars):
     if not bars:
         return metrics.summarize([], [])
@@ -163,6 +176,7 @@ def optimize(
     bench_ret = benchmark.get("total_return_pct", 0.0)
     mc = montecarlo.summarize(chosen["test_pnls"], base.starting_cash, base.goal_equity(),
                               n_paths=2000, seed=7)
+    cost_sensitivity = _cost_sensitivity(chosen_cfg, series, all_test_bars, use_live)
 
     oos_list = chosen["test_returns"]
     mean_oos = _mean(oos_list)
@@ -207,6 +221,7 @@ def optimize(
             "sharpe": benchmark.get("sharpe", 0.0),
         },
         "monte_carlo": mc,
+        "cost_sensitivity": cost_sensitivity,
         "overfit_gap_pct": round(_mean(chosen["train_returns"]) - mean_oos, 2),
         "beats_benchmark": mean_oos > bench_ret,
         "best_config": chosen_cfg.to_dict(),
