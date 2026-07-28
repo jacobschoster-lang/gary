@@ -23,16 +23,28 @@ from pathlib import Path
 from typing import Any
 
 from gary.trading import RobinhoodCryptoBroker, TradingBot, TradingStore
+from gary.trading.options_backtest import OptionsPaperTrader, OptionsStore
 
 
-def run_once(store: TradingStore | None = None, use_live: bool = True) -> dict[str, Any]:
-    """Step the persisted paper account forward once and record equity."""
+def run_once(
+    store: TradingStore | None = None,
+    options_store: OptionsStore | None = None,
+    use_live: bool = True,
+) -> dict[str, Any]:
+    """Step the persisted paper accounts (equities/crypto + options) forward once."""
     store = store or TradingStore()
     config, broker = store.load()
     bot = TradingBot(config=config, broker=broker, use_live=use_live)
     result = bot.step_live()
     store.save(config, bot.broker)
     history = store.record_equity(result["date"], result["equity"])
+
+    # Advance the forward options paper position too.
+    options_store = options_store or OptionsStore()
+    ocfg, ostate = options_store.load()
+    ostep = OptionsPaperTrader(config=ocfg, use_live=use_live).step(ostate, on=result["date"])
+    options_store.save(ocfg, ostate)
+
     live = RobinhoodCryptoBroker.from_env()
     return {
         "date": result["date"],
@@ -40,6 +52,14 @@ def run_once(store: TradingStore | None = None, use_live: bool = True) -> dict[s
         "actions": result["actions"],
         "account": result["account"],
         "equity_history_points": len(history),
+        "options": {
+            "symbol": ostep["symbol"],
+            "strategy": ostep["strategy"],
+            "action": ostep["action"],
+            "equity": ostep["equity"],
+            "position": ostep["position"],
+            "equity_history_points": ostep["equity_history_points"],
+        },
         "mode": "paper",
         "live_broker_configured": live is not None,
         "live_trading_enabled": bool(live and live.live_enabled),
@@ -60,9 +80,12 @@ def main(argv: list[str] | None = None) -> int:
     manifest = out_dir / f"trade_{stamp}.json"
     manifest.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
+    opt = summary["options"]
     print(f"[trade_daily] {summary['date']} equity=${summary['equity']:,.2f} "
           f"actions={len(summary['actions'])} mode={summary['mode']} "
           f"live_configured={summary['live_broker_configured']}")
+    print(f"[trade_daily] options[{opt['symbol']}/{opt['strategy']}] {opt['action']} "
+          f"equity=${opt['equity']:,.2f}")
     print(f"[trade_daily] manifest -> {manifest}")
     return 0
 

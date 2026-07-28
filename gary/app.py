@@ -440,6 +440,8 @@ def trading_status() -> dict[str, Any]:
     payload["mode"] = "paper"
     payload["has_run"] = trading_store.exists()
     payload["forward_equity"] = trading_store.equity_history()
+    from gary.trading.options_backtest import OptionsStore
+    payload["options_forward_equity"] = OptionsStore().load()[1].get("equity_history", [])
     return payload
 
 

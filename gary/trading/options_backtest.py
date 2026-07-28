@@ -12,8 +12,11 @@ optimizer and tests are reproducible. P&L is option-only (no underlying leg).
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Any
 
 from gary.trading import metrics, risk
@@ -183,3 +186,125 @@ class OptionsBacktester:
             "trades": fills[-40:],
             "live_data": self.use_live,
         }
+
+
+@dataclass
+class OptionsPaperTrader:
+    """Stateful, day-by-day forward options trader (for the scheduled paper job).
+
+    Unlike ``OptionsBacktester`` (a from-scratch cycle backtest), this holds ONE
+    open option position across days: each ``step`` marks it to Black-Scholes,
+    closes on profit-take / stop / expiry, and (re)opens a fresh position when
+    flat. Cash reflects realized P&L only; equity = cash + the open position's
+    mark-to-model P&L.
+    """
+
+    config: OptionsConfig = field(default_factory=OptionsConfig)
+    use_live: bool = True
+
+    def _price_and_vol(self) -> tuple[float, float]:
+        n = self.config.vol_window + 2
+        series = price_data.price_series(self.config.symbol, n, use_live=self.use_live)
+        S = series[-1]
+        vol = risk.volatility(series, self.config.vol_window) * (_TRADING_DAYS ** 0.5)
+        return S, (vol if vol > 0.01 else 0.30)
+
+    def _unrealized(self, pos: dict, S: float, sigma: float) -> float:
+        r = self.config.rate
+        t_r = max(pos["days_left"], 0) / _TRADING_DAYS
+        mark = sum(
+            leg["qty"] * bs_price(leg["kind"], S, leg["strike"], t_r, r, sigma) * 100
+            for leg in pos["legs"]
+        ) * pos["contracts"]
+        return pos["entry_credit"] + mark
+
+    def step(self, state: dict, on: str | None = None,
+             S: float | None = None, sigma: float | None = None) -> dict[str, Any]:
+        cfg = self.config
+        r = cfg.rate
+        on = on or date.today().isoformat()
+        if S is None or sigma is None:
+            S, sigma = self._price_and_vol()
+        cash = float(state.get("cash", cfg.starting_cash))
+        pos = state.get("position")
+        action = "held"
+
+        if pos:
+            pos["days_left"] -= 1
+            pnl_now = self._unrealized(pos, S, sigma)
+            mp = pos["max_profit_total"]
+            expired = pos["days_left"] <= 0
+            take = cfg.profit_take > 0 and mp > 0 and pnl_now >= cfg.profit_take * mp
+            stop = cfg.stop_mult > 0 and mp > 0 and pnl_now <= -cfg.stop_mult * mp
+            if expired or take or stop:
+                legcount = len(pos["legs"])
+                close_comm = cfg.commission_per_contract * legcount * pos["contracts"]
+                if expired:
+                    payoff = payoff_at(pos["legs"], S) * pos["contracts"]
+                    realized = pos["entry_credit"] + payoff - pos["open_comm"]
+                else:
+                    realized = pnl_now - pos["open_comm"] - close_comm
+                cash += realized
+                state.setdefault("realized", []).append(
+                    {"date": on, "pnl": round(realized, 2), "strategy": pos["strategy"]})
+                pos = None
+                action = "closed"
+
+        if not pos:
+            t = cfg.dte / _TRADING_DAYS
+            strat = build(cfg.strategy, S, r, t, sigma, cfg.moneyness, cfg.width)
+            risk_per = strat["max_loss"]
+            contracts = int((cash * cfg.risk_pct) // risk_per) if risk_per > 0 else 0
+            if contracts == 0 and 0 < risk_per <= cash * 0.5:
+                contracts = 1
+            if contracts > 0:
+                legcount = len(strat["legs"])
+                pos = {
+                    "strategy": cfg.strategy, "legs": strat["legs"], "contracts": contracts,
+                    "entry_credit": strat["entry_credit"] * contracts, "entry_S": round(S, 4),
+                    "dte": cfg.dte, "days_left": cfg.dte,
+                    "max_profit_total": strat["max_profit"] * contracts,
+                    "open_comm": cfg.commission_per_contract * legcount * contracts,
+                    "opened_on": on,
+                }
+                action = "rolled" if action == "closed" else "opened"
+
+        state["position"] = pos
+        state["cash"] = round(cash, 2)
+        unreal = self._unrealized(pos, S, sigma) if pos else 0.0
+        equity = round(cash + unreal, 2)
+        hist = state.setdefault("equity_history", [])
+        hist[:] = [h for h in hist if h.get("date") != on]
+        hist.append({"date": on, "equity": equity})
+
+        return {
+            "date": on, "action": action, "equity": equity, "cash": round(cash, 2),
+            "symbol": cfg.symbol, "strategy": cfg.strategy,
+            "position": (
+                {"strategy": pos["strategy"], "contracts": pos["contracts"],
+                 "days_left": pos["days_left"], "unrealized_pnl": round(unreal, 2)}
+                if pos else None
+            ),
+            "equity_history_points": len(hist),
+        }
+
+
+class OptionsStore:
+    """Local JSON persistence for the forward options paper account."""
+
+    def __init__(self, path: str | Path | None = None) -> None:
+        self.path = Path(path or os.environ.get("GARY_OPTIONS_FILE", "finance_data/options.json"))
+
+    def load(self) -> tuple[OptionsConfig, dict]:
+        if not self.path.exists():
+            return OptionsConfig(), {}
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return OptionsConfig(), {}
+        return OptionsConfig.from_dict(data.get("config")), dict(data.get("state", {}))
+
+    def save(self, config: OptionsConfig, state: dict) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"config": config.to_dict(), "state": state}
+        self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

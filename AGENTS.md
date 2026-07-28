@@ -148,6 +148,13 @@ Options strategies:
  dashboard "Options strategies" card drives the optimizer. Note: premium-selling
  strategies show inflated Sharpe (low variance, fat tails) — lean on the Monte
  Carlo risk-of-ruin, not Sharpe alone.
+- Forward options paper trading: `OptionsPaperTrader.step()` holds ONE option
+ position across days (mark to BS, close on profit-take/stop/expiry, roll when
+ flat); state persists via `OptionsStore` (`finance_data/options.json`, override
+ `GARY_OPTIONS_FILE`). `gary.jobs.trade_daily` advances BOTH the equities/crypto
+ account and this options position each run, and the workflow persists both state
+ files. `/api/trading/status` exposes `options_forward_equity`, overlaid on the
+ dashboard "Forward paper track record" chart.
 - Live via Robinhood MCP (`gary/trading/robinhood_mcp.py`, preferred live path):
  `RobinhoodMcpBroker` routes the bot's orders to Robinhood's official MCP trading
  server (`https://agent.robinhood.com/mcp/trading`) as tool calls. It implements

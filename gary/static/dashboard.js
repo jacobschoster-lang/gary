@@ -741,7 +741,7 @@ function renderTrading(data) {
     `max ${((cfg.max_position_pct || 0) * 100).toFixed(0)}%/position · ` +
     `reserve skim ${((cfg.rebalance_profit_pct || 0) * 100).toFixed(0)}%`;
 
-  if (data.forward_equity) renderForwardEquity(data.forward_equity);
+  if (data.forward_equity) renderForwardEquity(data.forward_equity, data.options_forward_equity);
   if (data.optimization) renderOptimization(data.optimization);
 
   const posEl = document.getElementById('tb_positions');
@@ -812,21 +812,31 @@ function setText(id, text) {
   if (el) el.textContent = text;
 }
 
-function renderForwardEquity(history) {
+function renderForwardEquity(history, optionsHistory) {
   const card = document.getElementById('tb_forward_card');
   if (!card) return;
-  if (!history || !history.length) { card.style.display = 'none'; return; }
+  const opts = optionsHistory || [];
+  if ((!history || !history.length) && !opts.length) { card.style.display = 'none'; return; }
   card.style.display = 'block';
+  const labels = (history && history.length ? history : opts).map(h => h.date);
+  const datasets = [];
+  if (history && history.length) {
+    datasets.push({
+      label: 'Equities/crypto paper equity', data: history.map(h => h.equity),
+      borderColor: PALETTE[5], backgroundColor: 'rgba(14,165,233,0.12)',
+      fill: true, tension: 0.2, pointRadius: 2,
+    });
+  }
+  if (opts.length) {
+    datasets.push({
+      label: 'Options paper equity', data: opts.map(h => h.equity),
+      borderColor: PALETTE[4], backgroundColor: 'rgba(139,92,246,0.10)',
+      fill: false, tension: 0.2, pointRadius: 2,
+    });
+  }
   chart('chart_forward', {
     type: 'line',
-    data: {
-      labels: history.map(h => h.date),
-      datasets: [{
-        label: 'Forward paper equity', data: history.map(h => h.equity),
-        borderColor: PALETTE[5], backgroundColor: 'rgba(14,165,233,0.12)',
-        fill: true, tension: 0.2, pointRadius: 2,
-      }],
-    },
+    data: { labels, datasets },
     options: {
       plugins: { legend: { labels: { color: '#cbd5e1' } } },
       scales: {

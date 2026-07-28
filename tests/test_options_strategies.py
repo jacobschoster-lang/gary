@@ -8,7 +8,12 @@ from fastapi.testclient import TestClient
 
 from gary.app import app
 from gary.trading.option_strategies import build, payoff_at
-from gary.trading.options_backtest import OptionsBacktester, OptionsConfig
+from gary.trading.options_backtest import (
+    OptionsBacktester,
+    OptionsConfig,
+    OptionsPaperTrader,
+    OptionsStore,
+)
 from gary.trading.options_optimize import candidate_configs, optimize
 
 client = TestClient(app)
@@ -72,6 +77,39 @@ def test_options_optimizer_walk_forward():
     assert o1["out_of_sample"]["num_trades"] >= 3  # picks a config that actually trades
     board = o1["leaderboard"]
     assert board and "train_return_pct" in board[0] and "test_return_pct" in board[0]
+
+
+# ---------- forward options paper trader ----------
+def test_options_paper_trader_opens_and_tracks_equity():
+    t = OptionsPaperTrader(OptionsConfig(symbol="NVDA", strategy="iron_condor"), use_live=False)
+    state: dict = {}
+    r1 = t.step(state, on="2026-01-01")
+    assert r1["action"] == "opened"
+    assert state["position"] is not None
+    assert len(state["equity_history"]) == 1
+    r2 = t.step(state, on="2026-01-02")
+    assert r2["action"] == "held"
+    assert len(state["equity_history"]) == 2
+
+
+def test_options_paper_trader_closes_or_rolls_at_expiry():
+    cfg = OptionsConfig(symbol="NVDA", strategy="iron_condor")
+    t = OptionsPaperTrader(cfg, use_live=False)
+    state: dict = {}
+    t.step(state, on="d0", S=100.0, sigma=0.3)
+    state["position"]["days_left"] = 1  # force expiry on the next step
+    r = t.step(state, on="d1", S=100.0, sigma=0.3)
+    assert r["action"] in ("closed", "rolled")
+    assert state.get("realized")  # a realized P&L was recorded
+
+
+def test_options_store_roundtrip(tmp_path):
+    store = OptionsStore(path=tmp_path / "options.json")
+    cfg = OptionsConfig(symbol="AAPL", strategy="bull_put_spread")
+    store.save(cfg, {"cash": 10_000.0, "equity_history": [{"date": "d", "equity": 10_000.0}]})
+    loaded_cfg, state = store.load()
+    assert loaded_cfg.symbol == "AAPL" and loaded_cfg.strategy == "bull_put_spread"
+    assert state["cash"] == 10_000.0 and len(state["equity_history"]) == 1
 
 
 # ---------- API ----------

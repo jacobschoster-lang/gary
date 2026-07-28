@@ -35,17 +35,16 @@ jobs:
       - name: Run daily paper step (live prices, paper execution)
         env:
           GARY_TRADING_FILE: finance_data/trading.json
+          GARY_OPTIONS_FILE: finance_data/options.json
         run: |
           python -m gary.jobs.trade_daily --out out
 
       - name: Persist forward paper state
-        env:
-          GARY_TRADING_FILE: finance_data/trading.json
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           # finance_data/ is gitignored; force-add so the forward record persists.
-          git add -f finance_data/trading.json
+          git add -f finance_data/trading.json finance_data/options.json
           if git diff --cached --quiet; then
             echo "No trading-state change to commit."
           else

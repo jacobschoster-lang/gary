@@ -405,13 +405,18 @@ def test_step_live_mutates_persisted_account_and_records_equity(tmp_path):
 
 def test_trade_daily_job_paper_and_safe(tmp_path, monkeypatch):
     from gary.jobs.trade_daily import run_once
+    from gary.trading.options_backtest import OptionsStore
 
     store = TradingStore(path=tmp_path / "trading.json")
-    summary = run_once(store=store, use_live=False)
+    options_store = OptionsStore(path=tmp_path / "options.json")
+    summary = run_once(store=store, options_store=options_store, use_live=False)
     assert summary["mode"] == "paper"
     assert summary["live_broker_configured"] is False  # no keys in test env
     assert summary["equity_history_points"] == 1
     assert "actions" in summary
+    # Options leg of the paper job is wired in and advanced too.
+    assert "options" in summary and summary["options"]["equity_history_points"] == 1
+    assert summary["options"]["strategy"]
 
 
 # ---------- robinhood seam ----------
