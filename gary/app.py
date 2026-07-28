@@ -50,6 +50,8 @@ from gary.trading import (
     TradingStore,
     optimize,
 )
+from gary.trading.options_backtest import OptionsBacktester, OptionsConfig
+from gary.trading.options_optimize import optimize as options_optimize
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -478,6 +480,31 @@ def trading_reset(req: TradingConfigIn) -> dict[str, Any]:
     payload["mode"] = "paper"
     payload["has_run"] = True
     return payload
+
+
+class OptionsOptimizeIn(BaseModel):
+    symbol: str = Field(default="NVDA", min_length=1)
+
+
+class OptionsRunIn(BaseModel):
+    symbol: str = Field(default="NVDA", min_length=1)
+    strategy: str = Field(default="iron_condor")
+    dte: int = Field(default=21, ge=5, le=90)
+    moneyness: float = Field(default=0.05, gt=0, lt=0.5)
+    profit_take: float = Field(default=0.5, ge=0, le=1)
+
+
+@app.post("/api/trading/options/optimize")
+def options_optimize_endpoint(req: OptionsOptimizeIn) -> dict[str, Any]:
+    """Grid-search option strategies and report honest out-of-sample results."""
+    return options_optimize(OptionsConfig(symbol=req.symbol))
+
+
+@app.post("/api/trading/options/run")
+def options_run_endpoint(req: OptionsRunIn) -> dict[str, Any]:
+    cfg = OptionsConfig(symbol=req.symbol, strategy=req.strategy, dte=req.dte,
+                        moneyness=req.moneyness, profit_take=req.profit_take)
+    return OptionsBacktester(cfg).run()
 
 
 @app.get("/api/realestate")

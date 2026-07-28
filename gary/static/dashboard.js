@@ -916,6 +916,52 @@ async function loadTrading() {
   }
 }
 
+function renderOptionsResult(o) {
+  document.getElementById('opt_result').style.display = 'block';
+  const sel = o.selection || {}, mc = o.monte_carlo || {}, cost = o.cost_sensitivity || [];
+  const costTxt = cost.map(c => pct(c.return_pct)).join(' → ');
+  document.getElementById('opt_summary').innerHTML =
+    `Best on <strong>${esc(o.symbol)}</strong>: <strong>${esc(o.out_of_sample.params.strategy)}</strong> ` +
+    `(${o.out_of_sample.params.dte}d, profit-take ${(o.out_of_sample.params.profit_take * 100).toFixed(0)}%) ` +
+    `across ${o.tried} configs. Beats buy &amp; hold OOS: ` +
+    `<strong style="color:${o.beats_benchmark ? 'var(--green)' : 'var(--red)'}">${o.beats_benchmark ? 'yes' : 'no'}</strong> · ` +
+    `overfit gap ${(o.overfit_gap_pct || 0).toFixed(1)} pts · Sharpe deflated ` +
+    `${(sel.observed_sharpe || 0).toFixed(2)}→${(sel.deflated_sharpe || 0).toFixed(2)} · ` +
+    `cost 1×/2×/3×: ${costTxt}`;
+  colorPct(document.getElementById('opt_is'), o.in_sample.return_pct);
+  colorPct(document.getElementById('opt_oos'), o.out_of_sample.return_pct);
+  colorPct(document.getElementById('opt_bench'), o.benchmark.return_pct);
+  const ruin = document.getElementById('opt_ruin');
+  ruin.textContent = (mc.risk_of_ruin_pct || 0).toFixed(1) + '%';
+  ruin.style.color = (mc.risk_of_ruin_pct || 0) > 10 ? 'var(--red)' : 'var(--green)';
+  document.getElementById('opt_leaderboard').innerHTML = (o.leaderboard || []).map((r, i) => {
+    const p = r.params || {};
+    return `<tr style="border-top:1px solid ${GRID};${i === 0 ? 'font-weight:700;' : ''}">
+      <td style="padding:6px 8px;">${i + 1}</td>
+      <td style="padding:6px 8px;">${esc(p.strategy)}</td>
+      <td style="padding:6px 8px;">${p.dte}d</td>
+      <td style="padding:6px 8px;">${(p.profit_take * 100).toFixed(0)}%</td>
+      <td style="padding:6px 8px;color:${(r.train_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.train_return_pct)}</td>
+      <td style="padding:6px 8px;color:${(r.test_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.test_return_pct)}</td>
+      <td style="padding:6px 8px;">${(r.sharpe || 0).toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function optimizeOptions() {
+  try {
+    showAlert('options_alert', '');
+    const symbol = document.getElementById('opt_symbol').value.trim() || 'NVDA';
+    const data = await apiFetch('/api/trading/options/optimize', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol }),
+    });
+    renderOptionsResult(data);
+  } catch (e) {
+    showAlert('options_alert', e.message);
+  }
+}
+
 async function optimizeBot() {
   try {
     showAlert('trading_alert', '');
@@ -960,6 +1006,8 @@ document.getElementById('btn_run_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_run_bot'), runBot));
 document.getElementById('btn_optimize_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_optimize_bot'), optimizeBot));
+document.getElementById('btn_opt_optimize')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_opt_optimize'), optimizeOptions));
 document.getElementById('btn_reset_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_reset_bot'), resetBot));
 

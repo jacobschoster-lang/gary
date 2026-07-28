@@ -1,0 +1,185 @@
+"""Options strategy backtester.
+
+Runs an option strategy on one underlying in fixed cycles (≈ monthly): each
+cycle it estimates volatility, opens the strategy's legs at Black-Scholes model
+prices, then either closes early on a profit-take / stop, or holds to expiry
+(intrinsic settlement). Position size is risk-based (a fraction of equity divided
+by the structure's max loss), and commissions are charged per contract-leg.
+
+Everything is deterministic offline (uses the synthetic price fallback), so the
+optimizer and tests are reproducible. P&L is option-only (no underlying leg).
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from datetime import date, timedelta
+from typing import Any
+
+from gary.trading import metrics, risk
+from gary.trading import prices as price_data
+from gary.trading.option_strategies import build, payoff_at
+from gary.trading.options import bs_price
+
+_TRADING_DAYS = 252
+
+
+@dataclass
+class OptionsConfig:
+    symbol: str = "NVDA"
+    strategy: str = "iron_condor"
+    starting_cash: float = 10_000.0
+    dte: int = 21  # trading days to expiry per cycle
+    moneyness: float = 0.05
+    width: float = 0.05
+    risk_pct: float = 0.10  # fraction of equity risked (max loss) per cycle
+    profit_take: float = 0.5  # close when captured >= this frac of max profit (0 disables)
+    stop_mult: float = 2.0  # close when loss >= this * max profit (0 disables)
+    commission_per_contract: float = 0.65
+    rate: float = 0.04
+    vol_window: int = 20
+    goal_multiple: float = 2.0
+
+    def goal_equity(self) -> float:
+        return self.starting_cash * self.goal_multiple
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["goal_equity"] = self.goal_equity()
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any] | None) -> OptionsConfig:
+        data = data or {}
+        base = cls()
+
+        def num(key, default, cast=float):
+            v = data.get(key)
+            return cast(v) if v is not None else default
+
+        return cls(
+            symbol=str(data.get("symbol") or base.symbol),
+            strategy=str(data.get("strategy") or base.strategy),
+            starting_cash=num("starting_cash", base.starting_cash),
+            dte=num("dte", base.dte, int),
+            moneyness=num("moneyness", base.moneyness),
+            width=num("width", base.width),
+            risk_pct=num("risk_pct", base.risk_pct),
+            profit_take=num("profit_take", base.profit_take),
+            stop_mult=num("stop_mult", base.stop_mult),
+            commission_per_contract=num("commission_per_contract", base.commission_per_contract),
+            rate=num("rate", base.rate),
+            vol_window=num("vol_window", base.vol_window, int),
+            goal_multiple=num("goal_multiple", base.goal_multiple),
+        )
+
+
+@dataclass
+class OptionsBacktester:
+    config: OptionsConfig = field(default_factory=OptionsConfig)
+    use_live: bool = True
+
+    def _annualized_vol(self, series: list[float], upto: int) -> float:
+        v = risk.volatility(series[: upto + 1], self.config.vol_window) * (_TRADING_DAYS ** 0.5)
+        return v if v > 0.01 else 0.30  # floor so pricing is sane when history is flat
+
+    def run(self, series: list[float] | None = None) -> dict[str, Any]:
+        cfg = self.config
+        warmup = cfg.vol_window + 1
+        if series is None:
+            span = max(320, warmup + 10 * cfg.dte)
+            series = price_data.price_series(cfg.symbol, span, use_live=self.use_live)
+        n = len(series)
+        equity = cfg.starting_cash
+        today = date.today()
+        curve: list[dict[str, Any]] = []
+        fills: list[dict[str, Any]] = []
+        r = cfg.rate
+
+        i = warmup
+        while i + cfg.dte < n:
+            S = series[i]
+            sigma = self._annualized_vol(series, i)
+            t = cfg.dte / _TRADING_DAYS
+            strat = build(cfg.strategy, S, r, t, sigma, cfg.moneyness, cfg.width)
+            legs = strat["legs"]
+            risk_per = strat["max_loss"]
+            contracts = int((equity * cfg.risk_pct) // risk_per) if risk_per > 0 else 0
+            # Allow a single lot when the risk budget can't cover one but the
+            # account still can within a 50% cap (common for pricey underlyings).
+            if contracts == 0 and 0 < risk_per <= equity * 0.5:
+                contracts = 1
+            date_str = (today - timedelta(days=n - 1 - i)).isoformat()
+            if contracts <= 0:
+                curve.append({"date": date_str, "equity": round(equity, 2)})
+                i += cfg.dte
+                continue
+
+            entry = strat["entry_credit"] * contracts
+            legcount = len(legs)
+            open_comm = cfg.commission_per_contract * legcount * contracts
+            max_profit_total = strat["max_profit"] * contracts
+
+            realized = None
+            close_day = cfg.dte
+            close_comm = cfg.commission_per_contract * legcount * contracts
+            for d in range(1, cfg.dte):
+                s_d = series[i + d]
+                t_r = (cfg.dte - d) / _TRADING_DAYS
+                mark = sum(
+                    leg["qty"] * bs_price(leg["kind"], s_d, leg["strike"], t_r, r, sigma) * 100
+                    for leg in legs
+                ) * contracts
+                pnl_now = entry + mark
+                take = cfg.profit_take > 0 and max_profit_total > 0 and \
+                    pnl_now >= cfg.profit_take * max_profit_total
+                stop = cfg.stop_mult > 0 and max_profit_total > 0 and \
+                    pnl_now <= -cfg.stop_mult * max_profit_total
+                if take or stop:
+                    realized = pnl_now - open_comm - close_comm
+                    close_day = d
+                    break
+            if realized is None:  # held to expiry (intrinsic settlement, no close commission)
+                payoff = payoff_at(legs, series[i + cfg.dte]) * contracts
+                realized = entry + payoff - open_comm
+
+            equity += realized
+            end_date = (today - timedelta(days=n - 1 - (i + close_day))).isoformat()
+            fills.append({
+                "date": end_date, "symbol": cfg.symbol, "side": "sell",
+                "strategy": cfg.strategy, "contracts": contracts,
+                "notional": round(abs(entry), 2), "realized_pnl": round(realized, 2),
+                "held_days": close_day,
+            })
+            curve.append({"date": end_date, "equity": round(equity, 2)})
+            i += cfg.dte
+
+        return self._report(curve, fills, series)
+
+    def _report(self, curve, fills, series) -> dict[str, Any]:
+        cfg = self.config
+        start = cfg.starting_cash
+        end_equity = curve[-1]["equity"] if curve else start
+        equity_series = [start] + [p["equity"] for p in curve]
+        stats = metrics.summarize(equity_series, fills)
+        goal = cfg.goal_equity()
+        # Benchmark: buy & hold the underlying over the same tested span.
+        bench = 0.0
+        if len(series) > 1 and series[0] > 0:
+            bench = round((series[-1] / series[0] - 1) * 100, 2)
+        return {
+            "config": cfg.to_dict(),
+            "start_equity": round(start, 2),
+            "end_equity": round(end_equity, 2),
+            "return_pct": round((end_equity - start) / start * 100, 2) if start else 0.0,
+            "max_drawdown_pct": stats["max_drawdown_pct"],
+            "metrics": stats,
+            "num_trades": len(fills),
+            "cycles": len(curve),
+            "underlying_return_pct": bench,
+            "goal_equity": round(goal, 2),
+            "goal_reached": end_equity >= goal,
+            "equity_curve": curve,
+            "trades": fills[-40:],
+            "live_data": self.use_live,
+        }

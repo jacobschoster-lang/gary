@@ -130,6 +130,24 @@ Trading bot (paper):
 - The optimizer also returns a `cost_sensitivity` sweep (chosen config's OOS
  return at 1x/2x/3x trading costs) so you can see whether an edge survives higher
  frictions.
+
+Options strategies:
+- `gary/trading/options.py` = Black-Scholes pricing/greeks (stdlib only, no
+ numpy/scipy). `gary/trading/option_strategies.py` builds defined-risk option
+ structures (cash-secured put, bull-put/bear-call spreads, iron condor, short
+ strangle, long straddle) returning legs + entry credit/debit + max profit/loss.
+- `gary/trading/options_backtest.py` (`OptionsBacktester`) runs a strategy on one
+ underlying in ~monthly cycles: prices legs via BS using trailing realized vol,
+ sizes by risk (max-loss fraction of equity, min 1 lot within a 50% cap), marks
+ daily for profit-take/stop, else settles at expiry intrinsic. Deterministic
+ offline. `gary/trading/options_optimize.py` grid-searches strategy/DTE/profit-
+ take with a train/out-of-sample split, underlying buy-and-hold benchmark,
+ deflated Sharpe, Monte Carlo, and a cost-sensitivity sweep.
+- API: `POST /api/trading/options/optimize` (`{symbol}`) and
+ `POST /api/trading/options/run` (`{symbol,strategy,dte,moneyness,profit_take}`);
+ dashboard "Options strategies" card drives the optimizer. Note: premium-selling
+ strategies show inflated Sharpe (low variance, fat tails) — lean on the Monte
+ Carlo risk-of-ruin, not Sharpe alone.
 - Live via Robinhood MCP (`gary/trading/robinhood_mcp.py`, preferred live path):
  `RobinhoodMcpBroker` routes the bot's orders to Robinhood's official MCP trading
  server (`https://agent.robinhood.com/mcp/trading`) as tool calls. It implements

@@ -296,6 +296,41 @@
           </table>
         </div>
       </div>
+
+      <div class="card">
+        <h2>Options strategies <span class="tag" style="vertical-align:middle;">PAPER</span></h2>
+        <p class="muted" style="margin-top:0;">Backtests defined-risk option structures
+          (iron condor, credit spreads, cash-secured put, strangle, straddle) on an underlying,
+          priced with Black-Scholes, and picks the best via train/out-of-sample split.</p>
+        <div id="options_alert" class="alert alert-error" style="display:none;"></div>
+        <div class="row">
+          <div class="field" style="flex:0 0 160px;margin-bottom:0;">
+            <label>Underlying</label>
+            <input id="opt_symbol" value="NVDA" />
+          </div>
+          <button id="btn_opt_optimize" type="button" class="btn-purple">Optimize options</button>
+        </div>
+        <div id="opt_result" style="display:none;margin-top:14px;">
+          <div id="opt_summary" class="muted"></div>
+          <div class="stats" style="margin-top:10px;">
+            <div class="stat"><div class="k">In-sample</div><div class="v" id="opt_is">—</div></div>
+            <div class="stat"><div class="k">Out-of-sample</div><div class="v" id="opt_oos">—</div></div>
+            <div class="stat"><div class="k">Buy &amp; hold</div><div class="v" id="opt_bench">—</div></div>
+            <div class="stat"><div class="k">Risk of ruin</div><div class="v" id="opt_ruin">—</div></div>
+          </div>
+          <div style="overflow-x:auto;margin-top:12px;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead><tr style="text-align:left;color:var(--muted);">
+                <th style="padding:6px 8px;">#</th><th style="padding:6px 8px;">Strategy</th>
+                <th style="padding:6px 8px;">DTE</th><th style="padding:6px 8px;">Profit-take</th>
+                <th style="padding:6px 8px;">Train</th><th style="padding:6px 8px;">OOS</th>
+                <th style="padding:6px 8px;">OOS Sharpe</th>
+              </tr></thead>
+              <tbody id="opt_leaderboard"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section id="tab-content" class="tab-panel">
@@ -372,6 +407,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=10"></script>
+  <script src="/static/dashboard.js?v=11"></script>
 </body>
 </html>
