@@ -520,6 +520,20 @@ def options_run_endpoint(req: OptionsRunIn) -> dict[str, Any]:
     return OptionsBacktester(cfg).run()
 
 
+class ResearchIn(BaseModel):
+    years: int = Field(default=4, ge=1, le=15)
+    start: float = Field(default=10_000.0, gt=0)
+    monthly_contribution: float = Field(default=2_000.0, ge=0)
+
+
+@app.post("/api/research/factors")
+def research_factors(req: ResearchIn) -> dict[str, Any]:
+    """Hunt for a durable factor edge and project the path to the wealth targets."""
+    from gary.research.harness import research as run_research
+    return run_research(years=req.years, start_cash=req.start,
+                        monthly_contribution=req.monthly_contribution)
+
+
 @app.get("/api/realestate")
 def realestate(
     city: str = "Cincinnati",

@@ -981,6 +981,57 @@ function renderOptionsResult(o) {
   }).join('');
 }
 
+function renderResearch(r) {
+  document.getElementById('research_result').style.display = 'block';
+  document.getElementById('rz_verdict').innerHTML =
+    `<strong>Verdict:</strong> ${esc(r.verdict)} <span class="muted">` +
+    `(universe ${r.universe.length}, ${r.rebalances} rebalances, ${r.n_trials} configs tested; ` +
+    `buy&amp;hold ${pct(r.benchmark.return_pct)}, CAGR ${(r.benchmark.cagr_pct || 0).toFixed(1)}%)</span>`;
+  document.getElementById('rz_factors').innerHTML = (r.factors || []).map(f => {
+    const c = f.survivor ? 'var(--green)' : 'var(--muted)';
+    return `<tr style="border-top:1px solid ${GRID};${f.survivor ? 'font-weight:700;' : ''}">
+      <td style="padding:6px 8px;">${esc(f.label)}</td>
+      <td style="padding:6px 8px;color:${(f.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(f.return_pct)}</td>
+      <td style="padding:6px 8px;">${(f.cagr_pct || 0).toFixed(1)}%</td>
+      <td style="padding:6px 8px;">${(f.sharpe || 0).toFixed(2)}</td>
+      <td style="padding:6px 8px;">${(f.deflated_sharpe || 0).toFixed(2)}</td>
+      <td style="padding:6px 8px;">${f.folds_positive}/${f.folds}</td>
+      <td style="padding:6px 8px;">${f.beats_benchmark ? 'yes' : 'no'}</td>
+      <td style="padding:6px 8px;color:${c}">${f.survivor ? 'YES' : 'no'}</td>
+    </tr>`;
+  }).join('');
+  const proj = r.projection || {};
+  const rows = [['optimistic (backtest)', proj.optimistic], ['market baseline (8%)', proj.market_baseline]];
+  document.getElementById('rz_projection').innerHTML = rows.map(([name, p]) => {
+    if (!p) return '';
+    const t = {};
+    (p.targets || []).forEach(x => { t[Math.round(x.target)] = x.years_to_target; });
+    const y1 = t[1000000], y18 = t[18000000];
+    return `<tr style="border-top:1px solid ${GRID};">
+      <td style="padding:6px 8px;">${esc(name)}</td>
+      <td style="padding:6px 8px;">${((p.annual_return || 0) * 100).toFixed(1)}%</td>
+      <td style="padding:6px 8px;">${y1 != null ? y1 + ' yrs' : 'never'}</td>
+      <td style="padding:6px 8px;">${y18 != null ? y18 + ' yrs' : 'never'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function runResearch() {
+  try {
+    showAlert('research_alert', '');
+    const years = parseInt(document.getElementById('rz_years').value, 10) || 4;
+    const start = parseFloat(document.getElementById('rz_start').value) || 10000;
+    const monthly_contribution = parseFloat(document.getElementById('rz_monthly').value) || 0;
+    const data = await apiFetch('/api/research/factors', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ years, start, monthly_contribution }),
+    });
+    renderResearch(data);
+  } catch (e) {
+    showAlert('research_alert', e.message);
+  }
+}
+
 async function optimizeOptions() {
   try {
     showAlert('options_alert', '');
@@ -1042,6 +1093,8 @@ document.getElementById('btn_optimize_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_optimize_bot'), optimizeBot));
 document.getElementById('btn_opt_optimize')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_opt_optimize'), optimizeOptions));
+document.getElementById('btn_research')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_research'), runResearch));
 document.getElementById('btn_reset_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_reset_bot'), resetBot));
 
