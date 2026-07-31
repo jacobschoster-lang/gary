@@ -155,6 +155,21 @@ Options strategies:
  account and this options position each run, and the workflow persists both state
  files. `/api/trading/status` exposes `options_forward_equity`, overlaid on the
  dashboard "Forward paper track record" chart.
+- Live-ops safety (all paper-safe, gated): `gary/trading/guardrails.py` is a kill
+ switch (`TRADING_HALT=1`) + daily-loss/drawdown circuit breaker
+ (`GARY_MAX_DAILY_LOSS_PCT`, `GARY_MAX_DRAWDOWN_PCT`) that halts NEW entries while
+ still allowing risk-reducing exits (threaded via `allow_new_entries` on
+ `step_live`/`OptionsPaperTrader.step`). `gary/trading/reconcile.py` diffs the
+ bot's book vs the broker's `get_positions`; `gary/trading/alerts.py` is opt-in
+ webhook alerting (`GARY_ALERT_WEBHOOK`, fail-soft). `gary.jobs.trade_daily` runs
+ guardrails + (when a live broker is configured) reconciliation + alerting, and
+ refuses new entries when tripped/unreconciled. `RobinhoodMcpBroker` also supports
+ shadow mode (`TRADING_SHADOW=1` logs would-be orders in `shadow_orders`),
+ idempotent `client_order_id`, and bounded retries.
+- Options quick wins: the optimizer returns the best structure's `payoff` diagram;
+ `POST /api/trading/options/optimize` with `apply=true` persists the pick to
+ `OptionsStore` so the daily job trades it; the dashboard shows a payoff-at-expiry
+ chart + an "apply best to daily job" checkbox.
 - Live via Robinhood MCP (`gary/trading/robinhood_mcp.py`, preferred live path):
  `RobinhoodMcpBroker` routes the bot's orders to Robinhood's official MCP trading
  server (`https://agent.robinhood.com/mcp/trading`) as tool calls. It implements
