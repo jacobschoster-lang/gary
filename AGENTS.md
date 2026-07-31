@@ -216,6 +216,25 @@ Options strategies:
  unimplemented — Robinhood has no official equities API; only the official
  Crypto API is safe to wire in. Keep the bot on paper until then.
 
+Factor research harness (`gary/research/`):
+- `factors.py` = price-based factor scores (12-1 momentum, short reversal,
+ low-volatility, trend). `backtest.py` = cross-sectional factor backtester
+ (long / dollar-neutral long-short, turnover costs, buy&hold benchmark).
+ `harness.py` ranks the battery across an **equities-only** universe (crypto
+ free-tier history is ~1y, which would bottleneck the panel), haircuts the winner
+ for multiple testing (`selection.deflated_sharpe` over the number of configs),
+ checks fold stability, flags survivors that beat buy&hold, blends them, and calls
+ `projection.py` (monthly-compounding goal math) for the path to $1M/$18M.
+ `POST /api/research/factors`; dashboard "Factor research — edge hunt" card.
+- Honesty guardrails baked in: the projection always shows an **8% market
+ baseline** next to the optimistic backtest CAGR. Treat backtest survivors
+ skeptically — the default universe is hand-picked mega-cap tech (selection bias)
+ over a bull window, long/short variants fail, and offline runs use synthetic
+ prices. Real edge requires an unbiased/broad universe across multiple regimes
+ (incl. a bear) with a locked holdout — not yet done.
+- `gary/trading/prices.py` `_fetch_yahoo` picks the Yahoo range from the requested
+ days (up to `5y`/`max`), so the research harness can pull multi-year history.
+
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly
   (not pip-installed), so the working directory must be the repo root for

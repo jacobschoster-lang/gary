@@ -42,7 +42,16 @@ def is_crypto(symbol: str) -> bool:
 
 
 def _fetch_yahoo(symbol: str, days: int) -> list[float] | None:
-    rng = "6mo" if days <= 120 else "1y"
+    if days <= 120:
+        rng = "6mo"
+    elif days <= 300:
+        rng = "1y"
+    elif days <= 600:
+        rng = "2y"
+    elif days <= 1300:
+        rng = "5y"
+    else:
+        rng = "max"
     data = http.get_json(_YF_CHART.format(symbol=symbol), params={"range": rng, "interval": "1d"})
     try:
         result = data["chart"]["result"][0]

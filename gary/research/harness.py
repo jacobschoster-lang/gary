@@ -21,9 +21,11 @@ from gary.research.factors import FACTORS, min_history
 from gary.trading import metrics, selection
 from gary.trading import prices as price_data
 
+# Equities only, so multi-year daily history is available uniformly for every name
+# (crypto free-tier history is capped at ~1y, which would bottleneck the panel).
 DEFAULT_UNIVERSE = [
     "NVDA", "TSLA", "AMD", "AAPL", "MSFT", "AMZN", "GOOGL", "META",
-    "BTC", "ETH", "SOL", "IONQ",
+    "QCOM", "INTC", "CRM", "IONQ",
 ]
 _TRADING_DAYS = 252
 _MARKET_BASELINE = 0.08  # conservative long-run market return for the honest projection
