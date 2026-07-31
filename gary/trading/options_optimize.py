@@ -17,9 +17,9 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any
 
-from gary.trading import montecarlo, selection
+from gary.trading import montecarlo, risk, selection
 from gary.trading import prices as price_data
-from gary.trading.option_strategies import STRATEGIES
+from gary.trading.option_strategies import STRATEGIES, payoff_curve
 from gary.trading.options_backtest import OptionsBacktester, OptionsConfig
 
 
@@ -83,8 +83,15 @@ def optimize(base: OptionsConfig | None = None, use_live: bool = True,
     in_ret = best_tr.get("return_pct", 0.0)
     oos_ret = best_te.get("return_pct", 0.0)
     bench = best_te.get("underlying_return_pct", 0.0)
+    # Payoff diagram of the chosen structure at the latest price/vol.
+    S = series[-1] if series else 100.0
+    vol = risk.volatility(series, base.vol_window) * (252 ** 0.5)
+    sigma = vol if vol > 0.01 else 0.30
+    payoff = payoff_curve(best_cfg.strategy, S, base.rate, best_cfg.dte / 252, sigma,
+                          best_cfg.moneyness, best_cfg.width)
     return {
         "symbol": base.symbol,
+        "payoff": payoff,
         "tried": len(grid),
         "objective": "train Sharpe, reported out-of-sample",
         "in_sample": _summary(best_cfg, best_tr),

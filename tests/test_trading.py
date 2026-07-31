@@ -491,7 +491,9 @@ def test_robinhood_mcp_routes_orders_through_caller():
     assert calls[-1][0] == "place_order"
     assert calls[-1][1]["side"] == "buy" and calls[-1][1]["quantity"] == 10.0
     broker.sell("BTC-USD", 3.0, 120.0, on="d2")
-    assert calls[-1][1] == {"symbol": "BTC-USD", "side": "sell", "type": "market", "quantity": 3.0}
+    args = calls[-1][1]
+    assert args["symbol"] == "BTC-USD" and args["side"] == "sell" and args["quantity"] == 3.0
+    assert args["type"] == "market" and "client_order_id" in args  # idempotency key added
 
 
 def test_robinhood_mcp_refuses_orders_when_not_live():
@@ -505,6 +507,106 @@ def test_robinhood_mcp_refuses_orders_when_not_live():
         assert "TRADING_LIVE" in str(exc)
     else:
         raise AssertionError("expected RobinhoodMcpError when not live")
+
+
+def test_mcp_shadow_records_orders_without_sending():
+    from gary.trading import RobinhoodMcpBroker
+
+    calls = []
+    b = RobinhoodMcpBroker(token="t", shadow=True, live_enabled=False,
+                           caller=lambda tool, a: calls.append(1))
+    fill = b.buy("BTC-USD", 1000.0, 100.0)
+    assert fill.side == "buy" and fill.quantity == 10.0
+    assert not calls  # nothing was actually sent
+    assert len(b.shadow_orders) == 1
+    args = b.shadow_orders[0]["arguments"]
+    assert args["side"] == "buy" and "client_order_id" in args
+
+
+def test_mcp_idempotent_client_order_id_forwarded():
+    from gary.trading import RobinhoodMcpBroker
+
+    seen = []
+    b = RobinhoodMcpBroker(token="t", live_enabled=True,
+                           caller=lambda tool, a: seen.append(a) or {"ok": 1})
+    b.place_order("BTC-USD", "buy", 1.0, client_order_id="abc123")
+    assert seen[-1]["client_order_id"] == "abc123"
+
+
+def test_mcp_retries_then_raises():
+    from gary.trading import RobinhoodMcpBroker
+    from gary.trading.robinhood_mcp import RobinhoodMcpError
+
+    n = [0]
+
+    def boom(tool, a):
+        n[0] += 1
+        raise RuntimeError("transient")
+
+    b = RobinhoodMcpBroker(token="t", live_enabled=True, caller=boom, max_retries=2)
+    try:
+        b.place_order("BTC-USD", "buy", 1.0)
+    except RobinhoodMcpError:
+        pass
+    else:
+        raise AssertionError("expected RobinhoodMcpError after retries")
+    assert n[0] == 3  # initial try + 2 retries
+
+
+# ---------- guardrails (kill switch + circuit breakers) ----------
+def test_guardrails_kill_switch_and_breakers():
+    from gary.trading.guardrails import Guardrails
+
+    assert Guardrails().evaluate(9000, 10000, 10000)["allow_new_entries"] is True
+    assert Guardrails(halted=True).evaluate(10000, 10000, 10000)["allow_new_entries"] is False
+    daily = Guardrails(max_daily_loss_pct=0.05).evaluate(9400, 10000, 10000)  # -6% on day
+    assert daily["tripped"] and "daily loss" in daily["reasons"][0]
+    dd = Guardrails(max_drawdown_pct=0.20).evaluate(7900, 8000, 10000)  # 21% off peak
+    assert dd["tripped"] and "drawdown" in dd["reasons"][0]
+    assert Guardrails.from_env({"TRADING_HALT": "1"}).halted is True
+
+
+# ---------- daily job: guardrails + reconciliation + alerting ----------
+def _stores(tmp_path):
+    from gary.trading.options_backtest import OptionsStore
+    return TradingStore(path=tmp_path / "t.json"), OptionsStore(path=tmp_path / "o.json")
+
+
+def test_trade_daily_halts_new_entries_when_guard_tripped(tmp_path):
+    from gary.jobs.trade_daily import run_once
+    from gary.trading.guardrails import Guardrails
+
+    ts, os_ = _stores(tmp_path)
+    summary = run_once(store=ts, options_store=os_, use_live=False,
+                       guardrails=Guardrails(halted=True), env={})
+    assert summary["new_entries_allowed"] is False
+    assert summary["guardrails"]["tripped"] is True
+    assert all(a["action"] != "buy" for a in summary["actions"])  # opened nothing
+    assert summary["options"]["action"] == "held"  # options stayed flat
+
+
+def test_trade_daily_reconciliation_blocks_on_mismatch(tmp_path):
+    from gary.jobs.trade_daily import run_once
+    from gary.trading import RobinhoodMcpBroker
+
+    ts, os_ = _stores(tmp_path)
+    # Bot book is empty; the broker reports an unexpected position -> mismatch -> block.
+    mcp = RobinhoodMcpBroker(token="t", caller=lambda tool, a: [{"symbol": "NVDA", "quantity": 5}])
+    summary = run_once(store=ts, options_store=os_, use_live=False, mcp=mcp, env={})
+    assert summary["reconciliation"]["reconciled"] is False
+    assert summary["new_entries_allowed"] is False
+
+
+def test_trade_daily_sends_alert_when_webhook_set(tmp_path):
+    from gary.jobs.trade_daily import run_once
+
+    ts, os_ = _stores(tmp_path)
+    sent = []
+    summary = run_once(store=ts, options_store=os_, use_live=False,
+                       env={"GARY_ALERT_WEBHOOK": "http://example/hook"},
+                       alert_transport=lambda url, payload: sent.append((url, payload)))
+    assert summary["alert_sent"] is True
+    assert sent and sent[0][0] == "http://example/hook" and "text" in sent[0][1]
 
 
 # ---------- API ----------

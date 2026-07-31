@@ -486,6 +486,7 @@ def trading_reset(req: TradingConfigIn) -> dict[str, Any]:
 
 class OptionsOptimizeIn(BaseModel):
     symbol: str = Field(default="NVDA", min_length=1)
+    apply: bool = Field(default=False, description="Persist the best config for the daily job")
 
 
 class OptionsRunIn(BaseModel):
@@ -498,8 +499,18 @@ class OptionsRunIn(BaseModel):
 
 @app.post("/api/trading/options/optimize")
 def options_optimize_endpoint(req: OptionsOptimizeIn) -> dict[str, Any]:
-    """Grid-search option strategies and report honest out-of-sample results."""
-    return options_optimize(OptionsConfig(symbol=req.symbol))
+    """Grid-search option strategies and report honest out-of-sample results.
+
+    With ``apply=true``, persist the chosen config so the daily paper job trades it.
+    """
+    result = options_optimize(OptionsConfig(symbol=req.symbol))
+    if req.apply:
+        from gary.trading.options_backtest import OptionsStore
+        store = OptionsStore()
+        _, state = store.load()
+        store.save(OptionsConfig.from_dict(result["best_config"]), state)
+        result["applied"] = True
+    return result
 
 
 @app.post("/api/trading/options/run")

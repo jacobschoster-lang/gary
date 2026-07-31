@@ -308,6 +308,10 @@
             <label>Underlying</label>
             <input id="opt_symbol" value="NVDA" />
           </div>
+          <label class="row" style="align-items:center;gap:8px;margin:0;">
+            <input type="checkbox" id="opt_apply" />
+            <span>Apply best to daily job</span>
+          </label>
           <button id="btn_opt_optimize" type="button" class="btn-purple">Optimize options</button>
         </div>
         <div id="opt_result" style="display:none;margin-top:14px;">
@@ -329,6 +333,8 @@
               <tbody id="opt_leaderboard"></tbody>
             </table>
           </div>
+          <h2 style="margin-top:14px;">Payoff at expiry (best structure)</h2>
+          <div class="chart-wrap"><canvas id="chart_opt_payoff"></canvas></div>
         </div>
       </div>
     </section>
@@ -407,6 +413,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=12"></script>
+  <script src="/static/dashboard.js?v=13"></script>
 </body>
 </html>

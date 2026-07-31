@@ -219,7 +219,8 @@ class OptionsPaperTrader:
         return pos["entry_credit"] + mark
 
     def step(self, state: dict, on: str | None = None,
-             S: float | None = None, sigma: float | None = None) -> dict[str, Any]:
+             S: float | None = None, sigma: float | None = None,
+             allow_new_entries: bool = True) -> dict[str, Any]:
         cfg = self.config
         r = cfg.rate
         on = on or date.today().isoformat()
@@ -250,7 +251,7 @@ class OptionsPaperTrader:
                 pos = None
                 action = "closed"
 
-        if not pos:
+        if not pos and allow_new_entries:
             t = cfg.dte / _TRADING_DAYS
             strat = build(cfg.strategy, S, r, t, sigma, cfg.moneyness, cfg.width)
             risk_per = strat["max_loss"]

@@ -944,6 +944,29 @@ function renderOptionsResult(o) {
   const ruin = document.getElementById('opt_ruin');
   ruin.textContent = (mc.risk_of_ruin_pct || 0).toFixed(1) + '%';
   ruin.style.color = (mc.risk_of_ruin_pct || 0) > 10 ? 'var(--red)' : 'var(--green)';
+  if (o.payoff && o.payoff.prices) {
+    const pf = o.payoff;
+    chart('chart_opt_payoff', {
+      type: 'line',
+      data: {
+        labels: pf.prices,
+        datasets: [{
+          label: `${esc(pf.strategy)} P&L at expiry`, data: pf.pnl,
+          borderColor: PALETTE[1], backgroundColor: 'rgba(34,197,94,0.10)',
+          fill: true, tension: 0, pointRadius: 0,
+        }],
+      },
+      options: {
+        plugins: { legend: { labels: { color: '#cbd5e1' } } },
+        scales: {
+          x: { title: { display: true, text: 'Underlying at expiry', color: '#94a3b8' },
+               ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: GRID } },
+          y: { ticks: { color: '#94a3b8', callback: v => money(v) }, grid: { color: GRID } },
+        },
+      },
+    });
+  }
+
   document.getElementById('opt_leaderboard').innerHTML = (o.leaderboard || []).map((r, i) => {
     const p = r.params || {};
     return `<tr style="border-top:1px solid ${GRID};${i === 0 ? 'font-weight:700;' : ''}">
@@ -962,9 +985,10 @@ async function optimizeOptions() {
   try {
     showAlert('options_alert', '');
     const symbol = document.getElementById('opt_symbol').value.trim() || 'NVDA';
+    const apply = document.getElementById('opt_apply').checked;
     const data = await apiFetch('/api/trading/options/optimize', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol }),
+      body: JSON.stringify({ symbol, apply }),
     });
     renderOptionsResult(data);
   } catch (e) {

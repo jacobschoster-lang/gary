@@ -7,7 +7,7 @@ every backtest here is reproducible without network access.
 from fastapi.testclient import TestClient
 
 from gary.app import app
-from gary.trading.option_strategies import build, payoff_at
+from gary.trading.option_strategies import build, payoff_at, payoff_curve
 from gary.trading.options_backtest import (
     OptionsBacktester,
     OptionsConfig,
@@ -112,12 +112,31 @@ def test_options_store_roundtrip(tmp_path):
     assert state["cash"] == 10_000.0 and len(state["equity_history"]) == 1
 
 
+# ---------- payoff diagram ----------
+def test_payoff_curve_iron_condor_shape():
+    pf = payoff_curve("iron_condor", 100, 0.04, 0.1, 0.3)
+    assert len(pf["prices"]) == len(pf["pnl"]) == 41
+    assert pf["max_profit"] > 0 and pf["max_loss"] > 0
+    mid = pf["pnl"][len(pf["pnl"]) // 2]  # near the money
+    assert mid > pf["pnl"][0] and mid > pf["pnl"][-1]  # condor profits mid, loses at the wings
+
+
 # ---------- API ----------
 def test_api_options_optimize_and_run():
     resp = client.post("/api/trading/options/optimize", json={"symbol": "NVDA"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["tried"] == 24 and "out_of_sample" in body and "benchmark" in body
+    assert "payoff" in body and body["payoff"]["prices"]
+
+
+def test_api_options_optimize_apply_persists_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("GARY_OPTIONS_FILE", str(tmp_path / "options.json"))
+    resp = client.post("/api/trading/options/optimize", json={"symbol": "NVDA", "apply": True})
+    body = resp.json()
+    assert body.get("applied") is True
+    cfg, _ = OptionsStore().load()
+    assert cfg.strategy == body["out_of_sample"]["params"]["strategy"]
 
     run = client.post("/api/trading/options/run",
                       json={"symbol": "NVDA", "strategy": "iron_condor", "dte": 21})

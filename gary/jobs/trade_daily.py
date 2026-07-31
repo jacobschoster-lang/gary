@@ -18,52 +18,107 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from gary.trading import RobinhoodCryptoBroker, TradingBot, TradingStore
+from gary.trading import (
+    RobinhoodCryptoBroker,
+    RobinhoodMcpBroker,
+    TradingBot,
+    TradingStore,
+    alerts,
+    reconcile,
+)
+from gary.trading.guardrails import Guardrails
 from gary.trading.options_backtest import OptionsPaperTrader, OptionsStore
+
+
+def _broker_positions(mcp: RobinhoodMcpBroker) -> list[dict]:
+    """Best-effort coercion of the MCP get_positions result to [{symbol,quantity}]."""
+    raw = mcp.get_positions()
+    rows = raw if isinstance(raw, list) else (raw or {}).get("positions", [])
+    out = []
+    for p in rows or []:
+        if isinstance(p, dict) and p.get("symbol") is not None:
+            out.append({"symbol": str(p["symbol"]), "quantity": float(p.get("quantity", 0) or 0)})
+    return out
 
 
 def run_once(
     store: TradingStore | None = None,
     options_store: OptionsStore | None = None,
     use_live: bool = True,
+    guardrails: Guardrails | None = None,
+    mcp: RobinhoodMcpBroker | None = None,
+    alert_transport: Callable | None = None,
+    env: dict | None = None,
 ) -> dict[str, Any]:
-    """Step the persisted paper accounts (equities/crypto + options) forward once."""
+    """Step the persisted paper accounts (equities/crypto + options) forward once,
+    gated by guardrails + (when a live broker is configured) position reconciliation,
+    and push an alert summary."""
     store = store or TradingStore()
     config, broker = store.load()
-    bot = TradingBot(config=config, broker=broker, use_live=use_live)
-    result = bot.step_live()
-    store.save(config, bot.broker)
+
+    # Guardrails from the prior forward-equity record (kill switch / loss / drawdown).
+    guard = guardrails if guardrails is not None else Guardrails.from_env(env)
+    hist = store.equity_history()
+    equities = [h["equity"] for h in hist] + [config.starting_cash]
+    prev_equity = hist[-1]["equity"] if hist else config.starting_cash
+    g = guard.evaluate(prev_equity, prev_equity, max(equities))
+    allow_new = g["allow_new_entries"]
+
+    # Reconcile against the live broker if configured (state-drift safety).
+    mcp = mcp if mcp is not None else RobinhoodMcpBroker.from_env(env)
+    reconciliation = None
+    if mcp is not None:
+        expected = [{"symbol": s, "quantity": p.quantity} for s, p in broker.positions.items()]
+        try:
+            actual = _broker_positions(mcp)
+            reconciled = reconcile.is_reconciled(expected, actual)
+            reconciliation = {"reconciled": reconciled,
+                              "reasons": reconcile.blocking_reasons(expected, actual)}
+        except Exception as exc:  # any MCP failure -> don't open new risk
+            reconciliation = {"reconciled": False, "error": str(exc)}
+            reconciled = False
+        if not reconciled:
+            allow_new = False
+
+    result = TradingBot(config=config, broker=broker, use_live=use_live).step_live(
+        allow_new_entries=allow_new)
+    store.save(config, broker)
     history = store.record_equity(result["date"], result["equity"])
 
-    # Advance the forward options paper position too.
     options_store = options_store or OptionsStore()
     ocfg, ostate = options_store.load()
-    ostep = OptionsPaperTrader(config=ocfg, use_live=use_live).step(ostate, on=result["date"])
+    ostep = OptionsPaperTrader(config=ocfg, use_live=use_live).step(
+        ostate, on=result["date"], allow_new_entries=allow_new)
     options_store.save(ocfg, ostate)
 
-    live = RobinhoodCryptoBroker.from_env()
-    return {
+    live = RobinhoodCryptoBroker.from_env(env)
+    summary = {
         "date": result["date"],
         "equity": result["equity"],
         "actions": result["actions"],
         "account": result["account"],
         "equity_history_points": len(history),
         "options": {
-            "symbol": ostep["symbol"],
-            "strategy": ostep["strategy"],
-            "action": ostep["action"],
-            "equity": ostep["equity"],
+            "symbol": ostep["symbol"], "strategy": ostep["strategy"],
+            "action": ostep["action"], "equity": ostep["equity"],
             "position": ostep["position"],
             "equity_history_points": ostep["equity_history_points"],
         },
+        "guardrails": g,
+        "reconciliation": reconciliation,
+        "new_entries_allowed": allow_new,
         "mode": "paper",
-        "live_broker_configured": live is not None,
-        "live_trading_enabled": bool(live and live.live_enabled),
+        "live_broker_configured": (live is not None) or (mcp is not None),
+        "live_trading_enabled": bool((live and live.live_enabled) or (mcp and mcp.live_enabled)),
     }
+    summary["alert_sent"] = alerts.send_alert(
+        alerts.format_daily_summary(summary), transport=alert_transport, env=env)
+    return summary
 
 
 def main(argv: list[str] | None = None) -> int:

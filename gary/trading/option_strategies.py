@@ -96,6 +96,31 @@ def build(strategy: str, S: float, r: float, t: float, sigma: float,
             "max_profit": max_profit, "max_loss": max(1.0, max_loss)}
 
 
+def payoff_curve(strategy: str, S: float, r: float, t: float, sigma: float,
+                 moneyness: float = 0.05, width: float = 0.05,
+                 lo_frac: float = 0.7, hi_frac: float = 1.3, points: int = 41) -> dict[str, Any]:
+    """Expiration P&L of the structure across a grid of terminal underlying prices
+    (for a payoff diagram). Includes breakevens and max profit/loss."""
+    strat = build(strategy, S, r, t, sigma, moneyness, width)
+    credit = strat["entry_credit"]
+    lo, hi = S * lo_frac, S * hi_frac
+    step = (hi - lo) / (points - 1) if points > 1 else 0.0
+    prices, pnl = [], []
+    for i in range(points):
+        p = lo + step * i
+        prices.append(round(p, 2))
+        pnl.append(round(credit + payoff_at(strat["legs"], p), 2))
+    breakevens = []
+    for i in range(1, points):
+        a, b = pnl[i - 1], pnl[i]
+        if (a <= 0 <= b or a >= 0 >= b) and a != b:
+            x = prices[i - 1] + (0 - a) * (prices[i] - prices[i - 1]) / (b - a)
+            breakevens.append(round(x, 2))
+    return {"strategy": strategy, "underlying": round(S, 2), "prices": prices, "pnl": pnl,
+            "breakevens": breakevens, "max_profit": strat["max_profit"],
+            "max_loss": strat["max_loss"], "entry_credit": credit}
+
+
 STRATEGIES = (
     "cash_secured_put", "bull_put_spread", "bear_call_spread",
     "iron_condor", "short_strangle", "long_straddle",

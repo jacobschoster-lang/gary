@@ -26,6 +26,7 @@ Config:
 from __future__ import annotations
 
 import os
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -55,9 +56,12 @@ class RobinhoodMcpBroker:
     url: str = DEFAULT_MCP_URL
     token: str | None = None
     live_enabled: bool = False
+    shadow: bool = False  # log would-be orders instead of sending (dry run)
     caller: Caller | None = None
     tools: dict[str, str] = field(default_factory=lambda: dict(_DEFAULT_TOOLS))
     timeout: float = 30.0
+    max_retries: int = 2
+    shadow_orders: list[dict] = field(default_factory=list)
     _rpc_id: int = 0
 
     @classmethod
@@ -75,14 +79,22 @@ class RobinhoodMcpBroker:
             url=env.get("ROBINHOOD_MCP_URL") or DEFAULT_MCP_URL,
             token=token,
             live_enabled=env.get("TRADING_LIVE", "").strip() in ("1", "true", "yes"),
+            shadow=env.get("TRADING_SHADOW", "").strip() in ("1", "true", "yes"),
             tools=tools,
         )
 
     # -- MCP plumbing ---------------------------------------------------------
     def call_tool(self, tool: str, arguments: dict) -> Any:
-        """Invoke an MCP tool through the configured caller (or the HTTP client)."""
+        """Invoke an MCP tool through the configured caller (or the HTTP client),
+        with bounded retries on transient failures."""
         caller = self.caller or self._http_caller
-        return caller(tool, arguments)
+        last_exc: Exception | None = None
+        for _ in range(self.max_retries + 1):
+            try:
+                return caller(tool, arguments)
+            except Exception as exc:  # retry transient MCP/transport errors
+                last_exc = exc
+        raise RobinhoodMcpError(f"MCP call {tool!r} failed after retries: {last_exc}")
 
     def _http_caller(self, tool: str, arguments: dict) -> Any:
         """Minimal MCP JSON-RPC (tools/call) over HTTP. Untested against the live
@@ -117,17 +129,23 @@ class RobinhoodMcpBroker:
     def get_positions(self) -> Any:
         return self.call_tool(self.tools["get_positions"], {})
 
-    def place_order(self, symbol: str, side: str, quantity: float) -> Any:
+    def place_order(self, symbol: str, side: str, quantity: float,
+                    client_order_id: str | None = None) -> Any:
         if side not in ("buy", "sell"):
             raise RobinhoodMcpError(f"invalid side: {side!r}")
-        if not self.live_enabled:
-            raise RobinhoodMcpError("live trading disabled; set TRADING_LIVE=1 to enable")
         if quantity <= 0:
             raise RobinhoodMcpError("quantity must be positive")
-        return self.call_tool(
-            self.tools["place_order"],
-            {"symbol": symbol, "side": side, "type": "market", "quantity": quantity},
-        )
+        # Idempotency key so a retry/restart can't double-submit the same order.
+        coid = client_order_id or uuid.uuid4().hex
+        args = {"symbol": symbol, "side": side, "type": "market",
+                "quantity": quantity, "client_order_id": coid}
+        if self.shadow:  # dry run: record the intended order, send nothing
+            record = {"shadow": True, "tool": self.tools["place_order"], "arguments": args}
+            self.shadow_orders.append(record)
+            return record
+        if not self.live_enabled:
+            raise RobinhoodMcpError("live trading disabled; set TRADING_LIVE=1 to enable")
+        return self.call_tool(self.tools["place_order"], args)
 
     # -- Broker surface (so the engine can route to it like PaperBroker) ------
     def buy(self, symbol: str, notional: float, price: float, *, on: str = "",
