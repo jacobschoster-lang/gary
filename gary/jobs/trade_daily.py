@@ -61,12 +61,15 @@ def run_once(
     store = store or TradingStore()
     config, broker = store.load()
 
-    # Guardrails from the prior forward-equity record (kill switch / loss / drawdown).
+    # Guardrails: compare the CURRENT marked equity to the day-start (prior close)
+    # and the all-time high-water mark so the loss/drawdown breakers actually trip.
     guard = guardrails if guardrails is not None else Guardrails.from_env(env)
     hist = store.equity_history()
-    equities = [h["equity"] for h in hist] + [config.starting_cash]
-    prev_equity = hist[-1]["equity"] if hist else config.starting_cash
-    g = guard.evaluate(prev_equity, prev_equity, max(equities))
+    day_start_equity = hist[-1]["equity"] if hist else config.starting_cash
+    pre = TradingBot(config=config, broker=broker, use_live=use_live).status()
+    current_equity = pre["end_equity"]
+    high_water = max([h["equity"] for h in hist] + [config.starting_cash, current_equity])
+    g = guard.evaluate(current_equity, day_start_equity, high_water)
     allow_new = g["allow_new_entries"]
 
     # Reconcile against the live broker if configured (state-drift safety).

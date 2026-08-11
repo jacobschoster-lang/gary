@@ -818,18 +818,26 @@ function renderForwardEquity(history, optionsHistory) {
   const opts = optionsHistory || [];
   if ((!history || !history.length) && !opts.length) { card.style.display = 'none'; return; }
   card.style.display = 'block';
-  const labels = (history && history.length ? history : opts).map(h => h.date);
+  // Align both series to a shared, sorted date axis so points aren't paired to
+  // the wrong dates when the two histories differ in length/dates.
+  const eq = history || [];
+  const labels = Array.from(new Set([...eq, ...opts].map(h => h.date))).sort();
+  const seriesFor = arr => {
+    const byDate = {};
+    arr.forEach(h => { byDate[h.date] = h.equity; });
+    return labels.map(d => (d in byDate ? byDate[d] : null));
+  };
   const datasets = [];
-  if (history && history.length) {
+  if (eq.length) {
     datasets.push({
-      label: 'Equities/crypto paper equity', data: history.map(h => h.equity),
+      label: 'Equities/crypto paper equity', data: seriesFor(eq), spanGaps: true,
       borderColor: PALETTE[5], backgroundColor: 'rgba(14,165,233,0.12)',
       fill: true, tension: 0.2, pointRadius: 2,
     });
   }
   if (opts.length) {
     datasets.push({
-      label: 'Options paper equity', data: opts.map(h => h.equity),
+      label: 'Options paper equity', data: seriesFor(opts), spanGaps: true,
       borderColor: PALETTE[4], backgroundColor: 'rgba(139,92,246,0.10)',
       fill: false, tension: 0.2, pointRadius: 2,
     });

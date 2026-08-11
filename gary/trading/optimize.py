@@ -176,7 +176,9 @@ def optimize(
     bench_ret = benchmark.get("total_return_pct", 0.0)
     mc = montecarlo.summarize(chosen["test_pnls"], base.starting_cash, base.goal_equity(),
                               n_paths=2000, seed=7)
-    cost_sensitivity = _cost_sensitivity(chosen_cfg, series, all_test_bars, use_live)
+    # Cost stress test on the most recent CONTIGUOUS fold window (not the gapped
+    # union of test windows, which would carry broker state across purge gaps).
+    cost_sensitivity = _cost_sensitivity(chosen_cfg, series, windows[-1][1], use_live)
 
     oos_list = chosen["test_returns"]
     mean_oos = _mean(oos_list)

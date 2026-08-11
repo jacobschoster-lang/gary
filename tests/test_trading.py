@@ -585,6 +585,21 @@ def test_trade_daily_halts_new_entries_when_guard_tripped(tmp_path):
     assert summary["options"]["action"] == "held"  # options stayed flat
 
 
+def test_trade_daily_daily_loss_breaker_trips(tmp_path):
+    from gary.jobs.trade_daily import run_once
+    from gary.trading.guardrails import Guardrails
+
+    ts, os_ = _stores(tmp_path)
+    # Prior close recorded well above the fresh ~$10k account -> today shows a big
+    # loss vs day-start, so a 10% daily-loss breaker must halt new entries.
+    ts.record_equity("2026-01-01", 12_000.0)
+    summary = run_once(store=ts, options_store=os_, use_live=False,
+                       guardrails=Guardrails(max_daily_loss_pct=0.10), env={})
+    assert summary["guardrails"]["tripped"] is True
+    assert summary["new_entries_allowed"] is False
+    assert summary["guardrails"]["daily_pnl_pct"] < -10
+
+
 def test_trade_daily_reconciliation_blocks_on_mismatch(tmp_path):
     from gary.jobs.trade_daily import run_once
     from gary.trading import RobinhoodMcpBroker
