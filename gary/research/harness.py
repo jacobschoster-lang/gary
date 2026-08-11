@@ -125,10 +125,21 @@ def research(
     targets = targets or [1_000_000.0, 18_000_000.0]
     warmup = max(min_history(f) for f in FACTORS)
     total_bars = warmup + years * _TRADING_DAYS
-    panel = {s: price_data.price_series(s, total_bars, use_live=use_live) for s in universe}
+    raw = {s: price_data.price_series(s, total_bars, use_live=use_live) for s in universe}
+    # Drop names without enough history (a throttled/failed live fetch shouldn't
+    # nuke the whole panel), then align to the common length.
+    min_needed = warmup + rebalance_days * 6
+    panel = {s: v for s, v in raw.items() if len(v) >= min_needed}
     length = min((len(v) for v in panel.values()), default=0)
     rebar = list(range(warmup, length, rebalance_days))
-    if len(rebar) < 8:
+    if len(panel) < 6 or len(rebar) < 8:
+        if use_live:  # live history insufficient (provider throttling) -> deterministic fallback
+            res = research(universe, years, folds, rebalance_days, holdout_frac,
+                           start_cash, monthly_contribution, targets, use_live=False)
+            res["note"] = ("live multi-year history was insufficient (data provider throttled); "
+                           "ran on the deterministic offline series (illustrative only).")
+            res["live_data"] = False
+            return res
         return {"degenerate": True, "note": "not enough history for the holdout split",
                 "universe": universe, "live_data": use_live}
 
