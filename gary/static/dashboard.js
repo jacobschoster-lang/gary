@@ -741,6 +741,7 @@ function renderTrading(data) {
     `max ${((cfg.max_position_pct || 0) * 100).toFixed(0)}%/position · ` +
     `reserve skim ${((cfg.rebalance_profit_pct || 0) * 100).toFixed(0)}%`;
 
+  if (data.forward_equity) renderForwardEquity(data.forward_equity, data.options_forward_equity);
   if (data.optimization) renderOptimization(data.optimization);
 
   const posEl = document.getElementById('tb_positions');
@@ -811,6 +812,49 @@ function setText(id, text) {
   if (el) el.textContent = text;
 }
 
+function renderForwardEquity(history, optionsHistory) {
+  const card = document.getElementById('tb_forward_card');
+  if (!card) return;
+  const opts = optionsHistory || [];
+  if ((!history || !history.length) && !opts.length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  // Align both series to a shared, sorted date axis so points aren't paired to
+  // the wrong dates when the two histories differ in length/dates.
+  const eq = history || [];
+  const labels = Array.from(new Set([...eq, ...opts].map(h => h.date))).sort();
+  const seriesFor = arr => {
+    const byDate = {};
+    arr.forEach(h => { byDate[h.date] = h.equity; });
+    return labels.map(d => (d in byDate ? byDate[d] : null));
+  };
+  const datasets = [];
+  if (eq.length) {
+    datasets.push({
+      label: 'Equities/crypto paper equity', data: seriesFor(eq), spanGaps: true,
+      borderColor: PALETTE[5], backgroundColor: 'rgba(14,165,233,0.12)',
+      fill: true, tension: 0.2, pointRadius: 2,
+    });
+  }
+  if (opts.length) {
+    datasets.push({
+      label: 'Options paper equity', data: seriesFor(opts), spanGaps: true,
+      borderColor: PALETTE[4], backgroundColor: 'rgba(139,92,246,0.10)',
+      fill: false, tension: 0.2, pointRadius: 2,
+    });
+  }
+  chart('chart_forward', {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      plugins: { legend: { labels: { color: '#cbd5e1' } } },
+      scales: {
+        x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: GRID } },
+        y: { ticks: { color: '#94a3b8', callback: v => money(v) }, grid: { color: GRID } },
+      },
+    },
+  });
+}
+
 function renderOptimization(opt) {
   const box = document.getElementById('tb_optim');
   box.style.display = 'block';
@@ -820,6 +864,11 @@ function renderOptimization(opt) {
   }
   const is = opt.in_sample || {}, oos = opt.out_of_sample || {}, bench = opt.benchmark || {};
   const agg = opt.aggregate || {}, mc = opt.monte_carlo || {}, selInfo = opt.selection || {};
+  const cost = opt.cost_sensitivity || [];
+  const costLine = cost.length
+    ? `<div style="margin-top:6px;">Cost sensitivity (OOS return at 1×/2×/3× costs): ` +
+      cost.map(c => `<strong>${pct(c.return_pct)}</strong>`).join(' → ') + `</div>`
+    : '';
   const selLine = selInfo.deflated_sharpe != null
     ? `<div style="margin-top:6px;">Robust pick (train mean − stdev). Sharpe deflated for ` +
       `${selInfo.n_trials} trials: <strong>${(selInfo.observed_sharpe || 0).toFixed(2)} → ` +
@@ -832,8 +881,8 @@ function renderOptimization(opt) {
     `The applied stats above reflect the most recent window; the numbers below are the honest OOS test.` +
     `<div style="margin-top:6px;">OOS positive in <strong>${agg.folds_positive || 0}/${opt.folds}</strong> folds · ` +
     `beats buy &amp; hold in <strong>${agg.folds_beating_benchmark || 0}/${opt.folds}</strong> · ` +
-    `overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>` +
-    selLine;
+      `overfit gap (in-sample − OOS): <strong>${(opt.overfit_gap_pct || 0).toFixed(1)} pts</strong></div>` +
+    selLine + costLine;
 
   colorPct(document.getElementById('tb_opt_base'), is.return_pct);
   colorPct(document.getElementById('tb_opt_best'), oos.return_pct);
@@ -885,6 +934,146 @@ async function loadTrading() {
   }
 }
 
+function renderOptionsResult(o) {
+  document.getElementById('opt_result').style.display = 'block';
+  const sel = o.selection || {}, mc = o.monte_carlo || {}, cost = o.cost_sensitivity || [];
+  const costTxt = cost.map(c => pct(c.return_pct)).join(' → ');
+  document.getElementById('opt_summary').innerHTML =
+    `Best on <strong>${esc(o.symbol)}</strong>: <strong>${esc(o.out_of_sample.params.strategy)}</strong> ` +
+    `(${o.out_of_sample.params.dte}d, profit-take ${(o.out_of_sample.params.profit_take * 100).toFixed(0)}%) ` +
+    `across ${o.tried} configs. Beats buy &amp; hold OOS: ` +
+    `<strong style="color:${o.beats_benchmark ? 'var(--green)' : 'var(--red)'}">${o.beats_benchmark ? 'yes' : 'no'}</strong> · ` +
+    `overfit gap ${(o.overfit_gap_pct || 0).toFixed(1)} pts · Sharpe deflated ` +
+    `${(sel.observed_sharpe || 0).toFixed(2)}→${(sel.deflated_sharpe || 0).toFixed(2)} · ` +
+    `cost 1×/2×/3×: ${costTxt}`;
+  colorPct(document.getElementById('opt_is'), o.in_sample.return_pct);
+  colorPct(document.getElementById('opt_oos'), o.out_of_sample.return_pct);
+  colorPct(document.getElementById('opt_bench'), o.benchmark.return_pct);
+  const ruin = document.getElementById('opt_ruin');
+  ruin.textContent = (mc.risk_of_ruin_pct || 0).toFixed(1) + '%';
+  ruin.style.color = (mc.risk_of_ruin_pct || 0) > 10 ? 'var(--red)' : 'var(--green)';
+  if (o.payoff && o.payoff.prices) {
+    const pf = o.payoff;
+    chart('chart_opt_payoff', {
+      type: 'line',
+      data: {
+        labels: pf.prices,
+        datasets: [{
+          label: `${esc(pf.strategy)} P&L at expiry`, data: pf.pnl,
+          borderColor: PALETTE[1], backgroundColor: 'rgba(34,197,94,0.10)',
+          fill: true, tension: 0, pointRadius: 0,
+        }],
+      },
+      options: {
+        plugins: { legend: { labels: { color: '#cbd5e1' } } },
+        scales: {
+          x: { title: { display: true, text: 'Underlying at expiry', color: '#94a3b8' },
+               ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: GRID } },
+          y: { ticks: { color: '#94a3b8', callback: v => money(v) }, grid: { color: GRID } },
+        },
+      },
+    });
+  }
+
+  document.getElementById('opt_leaderboard').innerHTML = (o.leaderboard || []).map((r, i) => {
+    const p = r.params || {};
+    return `<tr style="border-top:1px solid ${GRID};${i === 0 ? 'font-weight:700;' : ''}">
+      <td style="padding:6px 8px;">${i + 1}</td>
+      <td style="padding:6px 8px;">${esc(p.strategy)}</td>
+      <td style="padding:6px 8px;">${p.dte}d</td>
+      <td style="padding:6px 8px;">${(p.profit_take * 100).toFixed(0)}%</td>
+      <td style="padding:6px 8px;color:${(r.train_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.train_return_pct)}</td>
+      <td style="padding:6px 8px;color:${(r.test_return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(r.test_return_pct)}</td>
+      <td style="padding:6px 8px;">${(r.sharpe || 0).toFixed(2)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderResearch(r) {
+  document.getElementById('research_result').style.display = 'block';
+  const ho = r.holdout || {};
+  const reg = ho.regime;
+  let holdoutLine = '';
+  if (ho.combined) {
+    const beatColor = ho.beats_benchmark ? 'var(--green)' : 'var(--red)';
+    holdoutLine =
+      `<div style="margin-top:6px;">Out-of-sample holdout (${ho.rebalances} rebalances): ` +
+      `survivors <strong style="color:${beatColor}">${pct(ho.combined.return_pct)}</strong> ` +
+      `vs buy&amp;hold ${pct(ho.benchmark_return_pct)} \u2014 beats: ` +
+      `<strong style="color:${beatColor}">${ho.beats_benchmark ? 'yes' : 'no'}</strong>`;
+    if (reg) {
+      holdoutLine += ` \u00b7 by regime: bull ${pct(reg.bull_return_pct)} (${reg.bull_periods}p), ` +
+        `bear ${pct(reg.bear_return_pct)} (${reg.bear_periods}p)`;
+    }
+    holdoutLine += `</div>`;
+  } else {
+    holdoutLine = `<div style="margin-top:6px;">Holdout buy&amp;hold ${pct(ho.benchmark_return_pct)} ` +
+      `\u2014 no survivors to test.</div>`;
+  }
+  document.getElementById('rz_verdict').innerHTML =
+    `<strong>Verdict:</strong> ${esc(r.verdict)} <span class="muted">` +
+    `(universe ${r.universe.length}, ${r.rebalances} rebalances, ${r.n_trials} configs; ` +
+    `research buy&amp;hold ${pct(r.research_benchmark_pct)})</span>` + holdoutLine;
+  document.getElementById('rz_factors').innerHTML = (r.factors || []).map(f => {
+    const c = f.survivor ? 'var(--green)' : 'var(--muted)';
+    return `<tr style="border-top:1px solid ${GRID};${f.survivor ? 'font-weight:700;' : ''}">
+      <td style="padding:6px 8px;">${esc(f.label)}</td>
+      <td style="padding:6px 8px;color:${(f.return_pct || 0) >= 0 ? 'var(--green)' : 'var(--red)'}">${pct(f.return_pct)}</td>
+      <td style="padding:6px 8px;">${(f.cagr_pct || 0).toFixed(1)}%</td>
+      <td style="padding:6px 8px;">${(f.sharpe || 0).toFixed(2)}</td>
+      <td style="padding:6px 8px;">${(f.deflated_sharpe || 0).toFixed(2)}</td>
+      <td style="padding:6px 8px;">${f.folds_positive}/${f.folds}</td>
+      <td style="padding:6px 8px;">${f.beats_benchmark ? 'yes' : 'no'}</td>
+      <td style="padding:6px 8px;color:${c}">${f.survivor ? 'YES' : 'no'}</td>
+    </tr>`;
+  }).join('');
+  const proj = r.projection || {};
+  const rows = [['optimistic (backtest)', proj.optimistic], ['market baseline (8%)', proj.market_baseline]];
+  document.getElementById('rz_projection').innerHTML = rows.map(([name, p]) => {
+    if (!p) return '';
+    const t = {};
+    (p.targets || []).forEach(x => { t[Math.round(x.target)] = x.years_to_target; });
+    const y1 = t[1000000], y18 = t[18000000];
+    return `<tr style="border-top:1px solid ${GRID};">
+      <td style="padding:6px 8px;">${esc(name)}</td>
+      <td style="padding:6px 8px;">${((p.annual_return || 0) * 100).toFixed(1)}%</td>
+      <td style="padding:6px 8px;">${y1 != null ? y1 + ' yrs' : 'never'}</td>
+      <td style="padding:6px 8px;">${y18 != null ? y18 + ' yrs' : 'never'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function runResearch() {
+  try {
+    showAlert('research_alert', '');
+    const years = parseInt(document.getElementById('rz_years').value, 10) || 4;
+    const start = parseFloat(document.getElementById('rz_start').value) || 10000;
+    const monthly_contribution = parseFloat(document.getElementById('rz_monthly').value) || 0;
+    const data = await apiFetch('/api/research/factors', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ years, start, monthly_contribution }),
+    });
+    renderResearch(data);
+  } catch (e) {
+    showAlert('research_alert', e.message);
+  }
+}
+
+async function optimizeOptions() {
+  try {
+    showAlert('options_alert', '');
+    const symbol = document.getElementById('opt_symbol').value.trim() || 'NVDA';
+    const apply = document.getElementById('opt_apply').checked;
+    const data = await apiFetch('/api/trading/options/optimize', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, apply }),
+    });
+    renderOptionsResult(data);
+  } catch (e) {
+    showAlert('options_alert', e.message);
+  }
+}
+
 async function optimizeBot() {
   try {
     showAlert('trading_alert', '');
@@ -929,6 +1118,10 @@ document.getElementById('btn_run_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_run_bot'), runBot));
 document.getElementById('btn_optimize_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_optimize_bot'), optimizeBot));
+document.getElementById('btn_opt_optimize')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_opt_optimize'), optimizeOptions));
+document.getElementById('btn_research')?.addEventListener('click', () =>
+  withLoading(document.getElementById('btn_research'), runResearch));
 document.getElementById('btn_reset_bot')?.addEventListener('click', () =>
   withLoading(document.getElementById('btn_reset_bot'), resetBot));
 

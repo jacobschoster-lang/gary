@@ -263,9 +263,16 @@
         </div>
       </div>
 
+      <div id="tb_forward_card" class="card" style="display:none;">
+        <h2>Forward paper track record</h2>
+        <p class="muted" style="margin-top:0;">Real forward equity recorded by the daily paper job
+          (<code>gary.jobs.trade_daily</code>) — distinct from the backtest below.</p>
+        <div class="chart-wrap"><canvas id="chart_forward"></canvas></div>
+      </div>
+
       <div class="grid2">
         <div class="card">
-          <h2>Equity curve</h2>
+          <h2>Backtest equity curve</h2>
           <div class="chart-wrap"><canvas id="chart_equity"></canvas></div>
         </div>
         <div class="card">
@@ -287,6 +294,95 @@
             </tr></thead>
             <tbody id="tb_trades"><tr><td class="muted" colspan="6" style="padding:8px;">No trades yet.</td></tr></tbody>
           </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Options strategies <span class="tag" style="vertical-align:middle;">PAPER</span></h2>
+        <p class="muted" style="margin-top:0;">Backtests defined-risk option structures
+          (iron condor, credit spreads, cash-secured put, strangle, straddle) on an underlying,
+          priced with Black-Scholes, and picks the best via train/out-of-sample split.</p>
+        <div id="options_alert" class="alert alert-error" style="display:none;"></div>
+        <div class="row">
+          <div class="field" style="flex:0 0 160px;margin-bottom:0;">
+            <label>Underlying</label>
+            <input id="opt_symbol" value="NVDA" />
+          </div>
+          <label class="row" style="align-items:center;gap:8px;margin:0;">
+            <input type="checkbox" id="opt_apply" />
+            <span>Apply best to daily job</span>
+          </label>
+          <button id="btn_opt_optimize" type="button" class="btn-purple">Optimize options</button>
+        </div>
+        <div id="opt_result" style="display:none;margin-top:14px;">
+          <div id="opt_summary" class="muted"></div>
+          <div class="stats" style="margin-top:10px;">
+            <div class="stat"><div class="k">In-sample</div><div class="v" id="opt_is">—</div></div>
+            <div class="stat"><div class="k">Out-of-sample</div><div class="v" id="opt_oos">—</div></div>
+            <div class="stat"><div class="k">Buy &amp; hold</div><div class="v" id="opt_bench">—</div></div>
+            <div class="stat"><div class="k">Risk of ruin</div><div class="v" id="opt_ruin">—</div></div>
+          </div>
+          <div style="overflow-x:auto;margin-top:12px;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead><tr style="text-align:left;color:var(--muted);">
+                <th style="padding:6px 8px;">#</th><th style="padding:6px 8px;">Strategy</th>
+                <th style="padding:6px 8px;">DTE</th><th style="padding:6px 8px;">Profit-take</th>
+                <th style="padding:6px 8px;">Train</th><th style="padding:6px 8px;">OOS</th>
+                <th style="padding:6px 8px;">OOS Sharpe</th>
+              </tr></thead>
+              <tbody id="opt_leaderboard"></tbody>
+            </table>
+          </div>
+          <h2 style="margin-top:14px;">Payoff at expiry (best structure)</h2>
+          <div class="chart-wrap"><canvas id="chart_opt_payoff"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Factor research — edge hunt <span class="tag" style="vertical-align:middle;">RESEARCH</span></h2>
+        <p class="muted" style="margin-top:0;">Tests price-based factors (momentum, short reversal,
+          low-volatility, trend) across a universe vs buy-and-hold, haircutting for multiple testing
+          (deflated Sharpe). Then projects a compounding path to $1M and $18M — with an honest
+          market-baseline alongside the (optimistic) backtest estimate.</p>
+        <div id="research_alert" class="alert alert-error" style="display:none;"></div>
+        <div class="row">
+          <div class="field" style="flex:0 0 120px;margin-bottom:0;">
+            <label>Years</label><input id="rz_years" type="number" value="4" min="1" max="15" />
+          </div>
+          <div class="field" style="flex:0 0 140px;margin-bottom:0;">
+            <label>Start ($)</label><input id="rz_start" type="number" value="10000" />
+          </div>
+          <div class="field" style="flex:0 0 160px;margin-bottom:0;">
+            <label>Monthly add ($)</label><input id="rz_monthly" type="number" value="2000" />
+          </div>
+          <button id="btn_research" type="button" class="btn-purple">Run factor research</button>
+        </div>
+        <div id="research_result" style="display:none;margin-top:14px;">
+          <div id="rz_verdict" class="muted"></div>
+          <div style="overflow-x:auto;margin-top:10px;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead><tr style="text-align:left;color:var(--muted);">
+                <th style="padding:6px 8px;">Factor</th><th style="padding:6px 8px;">Return</th>
+                <th style="padding:6px 8px;">CAGR</th><th style="padding:6px 8px;">Sharpe</th>
+                <th style="padding:6px 8px;">Deflated</th><th style="padding:6px 8px;">Folds+</th>
+                <th style="padding:6px 8px;">Beats B&amp;H</th><th style="padding:6px 8px;">Survivor</th>
+              </tr></thead>
+              <tbody id="rz_factors"></tbody>
+            </table>
+          </div>
+          <h2 style="margin-top:14px;">Path to targets</h2>
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead><tr style="text-align:left;color:var(--muted);">
+                <th style="padding:6px 8px;">Scenario</th><th style="padding:6px 8px;">Assumed CAGR</th>
+                <th style="padding:6px 8px;">Years to $1M</th><th style="padding:6px 8px;">Years to $18M</th>
+              </tr></thead>
+              <tbody id="rz_projection"></tbody>
+            </table>
+          </div>
+          <div class="muted" style="margin-top:8px;font-size:12px;">The "optimistic" row uses the
+            backtest CAGR (likely inflated / regime-dependent — treat with skepticism); the
+            "market baseline" (8%) is the realistic anchor.</div>
         </div>
       </div>
     </section>
@@ -365,6 +461,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=9"></script>
+  <script src="/static/dashboard.js?v=16"></script>
 </body>
 </html>

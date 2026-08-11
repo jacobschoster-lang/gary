@@ -50,12 +50,15 @@ class TradingBot:
         history: dict[str, list[float]],
         on: str,
         exec_prices: dict[str, float] | None = None,
+        allow_new_entries: bool = True,
     ) -> list[dict[str, Any]]:
         """Advance the bot one bar.
 
         ``history[sym]`` is the closes known at decision time. ``exec_prices``
         is where orders actually fill — pass the *next* bar's price to avoid
         look-ahead bias. When omitted, fills use the last close in ``history``.
+        ``allow_new_entries=False`` (e.g. a tripped circuit breaker) still runs
+        risk-reducing exits but opens no new positions.
         """
         cfg = self.config
         prices = exec_prices or {s: h[-1] for s, h in history.items() if h}
@@ -98,10 +101,11 @@ class TradingBot:
                     if self._close(sym, price, on, f"regime exit (<{cfg.regime_ma}d MA)", actions):
                         exited.add(sym)
 
-        # 3) entries — only on rebalance bars (low-turnover gate).
+        # 3) entries — only on rebalance bars (low-turnover gate) and when the
+        # guardrails allow opening new risk.
         rebalance = self._ticks % max(1, cfg.rebalance_every) == 0
         self._ticks += 1
-        if rebalance:
+        if rebalance and allow_new_entries:
             equity = self.broker.equity(prices)
             if cfg.selection_mode == "long_short":
                 self._long_short_entries(history, prices, on, equity, exited, actions)
@@ -413,12 +417,14 @@ class TradingBot:
             prices.setdefault(sym, price_data.price_series(sym, 60, use_live=self.use_live)[-1])
         return self.report(curve=[], prices=prices, days=0)
 
-    def step_live(self) -> dict[str, Any]:
+    def step_live(self, allow_new_entries: bool = True) -> dict[str, Any]:
         """Advance the *persisted* account one step using the latest prices.
 
         Unlike ``simulate`` (a from-scratch backtest), this mutates the current
         broker — it's the forward paper-trading path a scheduled job calls daily.
         Decisions use the latest available closes and fill at the latest price.
+        ``allow_new_entries=False`` halts new positions (circuit breaker) while
+        still managing/closing existing ones.
         """
         cfg = self.config
         n = self.warmup() + 2
@@ -426,7 +432,7 @@ class TradingBot:
         prices = {s: v[-1] for s, v in series.items() if v}
         on = date.today().isoformat()
         self._ticks = 0  # force a rebalance decision on each live step
-        actions = self.run_tick(series, on, exec_prices=prices)
+        actions = self.run_tick(series, on, exec_prices=prices, allow_new_entries=allow_new_entries)
         equity = round(self.broker.equity(prices), 2)
         return {"date": on, "actions": actions, "equity": equity,
                 "account": self.broker.to_dict(prices)}

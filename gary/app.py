@@ -50,6 +50,8 @@ from gary.trading import (
     TradingStore,
     optimize,
 )
+from gary.trading.options_backtest import OptionsBacktester, OptionsConfig
+from gary.trading.options_optimize import optimize as options_optimize
 
 app = FastAPI(title="gary", version="0.1.0")
 
@@ -438,6 +440,8 @@ def trading_status() -> dict[str, Any]:
     payload["mode"] = "paper"
     payload["has_run"] = trading_store.exists()
     payload["forward_equity"] = trading_store.equity_history()
+    from gary.trading.options_backtest import OptionsStore
+    payload["options_forward_equity"] = OptionsStore().load()[1].get("equity_history", [])
     return payload
 
 
@@ -478,6 +482,58 @@ def trading_reset(req: TradingConfigIn) -> dict[str, Any]:
     payload["mode"] = "paper"
     payload["has_run"] = True
     return payload
+
+
+class OptionsOptimizeIn(BaseModel):
+    symbol: str = Field(default="NVDA", min_length=1)
+    apply: bool = Field(default=False, description="Persist the best config for the daily job")
+
+
+class OptionsRunIn(BaseModel):
+    symbol: str = Field(default="NVDA", min_length=1)
+    strategy: str = Field(default="iron_condor")
+    dte: int = Field(default=21, ge=5, le=90)
+    moneyness: float = Field(default=0.05, gt=0, lt=0.5)
+    profit_take: float = Field(default=0.5, ge=0, le=1)
+
+
+@app.post("/api/trading/options/optimize")
+def options_optimize_endpoint(req: OptionsOptimizeIn) -> dict[str, Any]:
+    """Grid-search option strategies and report honest out-of-sample results.
+
+    With ``apply=true``, persist the chosen config so the daily paper job trades it.
+    """
+    result = options_optimize(OptionsConfig(symbol=req.symbol))
+    if req.apply:
+        from gary.trading.options_backtest import OptionsStore
+        store = OptionsStore()
+        _, state = store.load()
+        store.save(OptionsConfig.from_dict(result["best_config"]), state)
+        result["applied"] = True
+    return result
+
+
+@app.post("/api/trading/options/run")
+def options_run_endpoint(req: OptionsRunIn) -> dict[str, Any]:
+    cfg = OptionsConfig(symbol=req.symbol, strategy=req.strategy, dte=req.dte,
+                        moneyness=req.moneyness, profit_take=req.profit_take)
+    return OptionsBacktester(cfg).run()
+
+
+class ResearchIn(BaseModel):
+    years: int = Field(default=4, ge=1, le=15)
+    start: float = Field(default=10_000.0, gt=0)
+    monthly_contribution: float = Field(default=2_000.0, ge=0)
+    offline: bool = Field(default=False, description="Use the deterministic offline series")
+
+
+@app.post("/api/research/factors")
+def research_factors(req: ResearchIn) -> dict[str, Any]:
+    """Hunt for a durable factor edge and project the path to the wealth targets."""
+    from gary.research.harness import research as run_research
+    return run_research(years=req.years, start_cash=req.start,
+                        monthly_contribution=req.monthly_contribution,
+                        use_live=not req.offline)
 
 
 @app.get("/api/realestate")

@@ -121,7 +121,55 @@ Trading bot (paper):
  `TradingStore.record_equity()` keeps a de-duped daily equity history (exposed at
  `/api/trading/status` as `forward_equity`). `python -m gary.jobs.trade_daily`
  runs one forward step for a scheduler (paper-only, safe; writes a manifest to
- `out/`). It never sends real orders.
+ `out/`). It never sends real orders. `.github/workflows/trade-daily.yml` runs it
+ on weekdays (live prices, paper execution) and force-commits the updated
+ `finance_data/trading.json` back so the forward record persists across runs
+ (scheduled workflows only run once merged to the default branch). The dashboard
+ renders this record in the "Forward paper track record" card from
+ `status.forward_equity`.
+- The optimizer also returns a `cost_sensitivity` sweep (chosen config's OOS
+ return at 1x/2x/3x trading costs) so you can see whether an edge survives higher
+ frictions.
+
+Options strategies:
+- `gary/trading/options.py` = Black-Scholes pricing/greeks (stdlib only, no
+ numpy/scipy). `gary/trading/option_strategies.py` builds defined-risk option
+ structures (cash-secured put, bull-put/bear-call spreads, iron condor, short
+ strangle, long straddle) returning legs + entry credit/debit + max profit/loss.
+- `gary/trading/options_backtest.py` (`OptionsBacktester`) runs a strategy on one
+ underlying in ~monthly cycles: prices legs via BS using trailing realized vol,
+ sizes by risk (max-loss fraction of equity, min 1 lot within a 50% cap), marks
+ daily for profit-take/stop, else settles at expiry intrinsic. Deterministic
+ offline. `gary/trading/options_optimize.py` grid-searches strategy/DTE/profit-
+ take with a train/out-of-sample split, underlying buy-and-hold benchmark,
+ deflated Sharpe, Monte Carlo, and a cost-sensitivity sweep.
+- API: `POST /api/trading/options/optimize` (`{symbol}`) and
+ `POST /api/trading/options/run` (`{symbol,strategy,dte,moneyness,profit_take}`);
+ dashboard "Options strategies" card drives the optimizer. Note: premium-selling
+ strategies show inflated Sharpe (low variance, fat tails) — lean on the Monte
+ Carlo risk-of-ruin, not Sharpe alone.
+- Forward options paper trading: `OptionsPaperTrader.step()` holds ONE option
+ position across days (mark to BS, close on profit-take/stop/expiry, roll when
+ flat); state persists via `OptionsStore` (`finance_data/options.json`, override
+ `GARY_OPTIONS_FILE`). `gary.jobs.trade_daily` advances BOTH the equities/crypto
+ account and this options position each run, and the workflow persists both state
+ files. `/api/trading/status` exposes `options_forward_equity`, overlaid on the
+ dashboard "Forward paper track record" chart.
+- Live-ops safety (all paper-safe, gated): `gary/trading/guardrails.py` is a kill
+ switch (`TRADING_HALT=1`) + daily-loss/drawdown circuit breaker
+ (`GARY_MAX_DAILY_LOSS_PCT`, `GARY_MAX_DRAWDOWN_PCT`) that halts NEW entries while
+ still allowing risk-reducing exits (threaded via `allow_new_entries` on
+ `step_live`/`OptionsPaperTrader.step`). `gary/trading/reconcile.py` diffs the
+ bot's book vs the broker's `get_positions`; `gary/trading/alerts.py` is opt-in
+ webhook alerting (`GARY_ALERT_WEBHOOK`, fail-soft). `gary.jobs.trade_daily` runs
+ guardrails + (when a live broker is configured) reconciliation + alerting, and
+ refuses new entries when tripped/unreconciled. `RobinhoodMcpBroker` also supports
+ shadow mode (`TRADING_SHADOW=1` logs would-be orders in `shadow_orders`),
+ idempotent `client_order_id`, and bounded retries.
+- Options quick wins: the optimizer returns the best structure's `payoff` diagram;
+ `POST /api/trading/options/optimize` with `apply=true` persists the pick to
+ `OptionsStore` so the daily job trades it; the dashboard shows a payoff-at-expiry
+ chart + an "apply best to daily job" checkbox.
 - Live via Robinhood MCP (`gary/trading/robinhood_mcp.py`, preferred live path):
  `RobinhoodMcpBroker` routes the bot's orders to Robinhood's official MCP trading
  server (`https://agent.robinhood.com/mcp/trading`) as tool calls. It implements
@@ -167,6 +215,25 @@ Trading bot (paper):
  `ROBINHOOD_PRIVATE_KEY` + `TRADING_LIVE=1`). Order placement is intentionally
  unimplemented — Robinhood has no official equities API; only the official
  Crypto API is safe to wire in. Keep the bot on paper until then.
+
+Factor research harness (`gary/research/`):
+- `factors.py` = price-based factor scores (12-1 momentum, short reversal,
+ low-volatility, trend). `backtest.py` = cross-sectional factor backtester
+ (long / dollar-neutral long-short, turnover costs, buy&hold benchmark).
+ `harness.py` ranks the battery across an **equities-only** universe (crypto
+ free-tier history is ~1y, which would bottleneck the panel), haircuts the winner
+ for multiple testing (`selection.deflated_sharpe` over the number of configs),
+ checks fold stability, flags survivors that beat buy&hold, blends them, and calls
+ `projection.py` (monthly-compounding goal math) for the path to $1M/$18M.
+ `POST /api/research/factors`; dashboard "Factor research — edge hunt" card.
+- Honesty guardrails baked in: the projection always shows an **8% market
+ baseline** next to the optimistic backtest CAGR. Treat backtest survivors
+ skeptically — the default universe is hand-picked mega-cap tech (selection bias)
+ over a bull window, long/short variants fail, and offline runs use synthetic
+ prices. Real edge requires an unbiased/broad universe across multiple regimes
+ (incl. a bear) with a locked holdout — not yet done.
+- `gary/trading/prices.py` `_fetch_yahoo` picks the Yahoo range from the requested
+ days (up to `5y`/`max`), so the research harness can pull multi-year history.
 
 Non-obvious notes:
 - Run all commands from the repo root. The `gary` package is imported directly
