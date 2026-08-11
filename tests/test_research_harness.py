@@ -75,8 +75,9 @@ def test_holdout_regime_split_present_when_survivors():
 
 def test_api_research_factors():
     resp = client.post("/api/research/factors", json={"years": 5, "start": 10000,
-                                                      "monthly_contribution": 2000})
+                                                      "monthly_contribution": 2000,
+                                                      "offline": True})
     assert resp.status_code == 200
     body = resp.json()
     assert body["n_trials"] == 12 and "verdict" in body
-    assert "holdout" in body and "projection" in body
+    assert "holdout" in body and "projection" in body and "data" in body

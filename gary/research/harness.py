@@ -22,9 +22,9 @@ from typing import Any
 
 from gary.research import projection
 from gary.research.backtest import FactorConfig, buy_hold_return, run_factor
+from gary.research.dataset import load_panel
 from gary.research.factors import FACTORS, min_history
 from gary.trading import metrics, selection
-from gary.trading import prices as price_data
 
 # Diversified across sectors (tech, financials, healthcare, staples, energy,
 # industrials, utilities) to reduce the tech-winner selection bias of Phase 1.
@@ -125,7 +125,7 @@ def research(
     targets = targets or [1_000_000.0, 18_000_000.0]
     warmup = max(min_history(f) for f in FACTORS)
     total_bars = warmup + years * _TRADING_DAYS
-    raw = {s: price_data.price_series(s, total_bars, use_live=use_live) for s in universe}
+    raw, coverage = load_panel(universe, total_bars, use_live=use_live)
     # Drop names without enough history (a throttled/failed live fetch shouldn't
     # nuke the whole panel), then align to the common length.
     min_needed = warmup + rebalance_days * 6
@@ -204,6 +204,8 @@ def research(
 
     return {
         "universe": universe, "years": years, "rebalances": len(rebar) - 1, "n_trials": n_trials,
+        "data": {"sources": coverage["sources"], "kept_symbols": len(panel),
+                 "total_symbols": len(universe)},
         "research_benchmark_pct": research_bench,
         "factors": rows,
         "survivors": [c.label() for c in survivor_cfgs],
