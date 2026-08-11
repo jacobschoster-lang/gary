@@ -74,11 +74,43 @@ def trend(prices: list[float], window: int = 200) -> float:
     return prices[-1] / sma - 1.0
 
 
+def long_term_reversal(prices: list[float], lookback: int = 252, skip: int = 21) -> float:
+    """Long-term reversal: NEGATIVE of the return from t-(lookback+skip) to t-skip
+    (buy multi-year losers). 0.0 if insufficient history."""
+    if lookback <= 0 or skip < 0 or len(prices) < lookback + skip + 1:
+        return 0.0
+    end = len(prices) - 1 - skip
+    base = prices[end - lookback]
+    if base == 0:
+        return 0.0
+    return -(prices[end] / base - 1.0)
+
+
+def downside_volatility(prices: list[float], window: int = 63) -> float:
+    """Downside-risk factor: negative downside deviation of the last `window` returns
+    (only negative returns count), so names with little downside score higher.
+    0.0 if insufficient history or no downside."""
+    if window <= 0 or len(prices) < window + 1:
+        return 0.0
+    recent = prices[-(window + 1):]
+    downs: list[float] = []
+    for prev, cur in zip(recent, recent[1:], strict=False):
+        if prev > 0:
+            r = cur / prev - 1.0
+            if r < 0:
+                downs.append(r)
+    if not downs:
+        return 0.0
+    return -((sum(x * x for x in downs) / len(downs)) ** 0.5)
+
+
 FACTORS: dict[str, Callable[[list[float]], float]] = {
     "momentum": lambda prices: momentum(prices),
     "short_reversal": lambda prices: short_reversal(prices),
     "low_volatility": lambda prices: low_volatility(prices),
     "trend": lambda prices: trend(prices),
+    "long_term_reversal": lambda prices: long_term_reversal(prices),
+    "downside_volatility": lambda prices: downside_volatility(prices),
 }
 
 
@@ -100,6 +132,8 @@ def min_history(name: str) -> int:
         "short_reversal": 5 + 1,
         "low_volatility": 63 + 1,
         "trend": 200 + 1,
+        "long_term_reversal": 252 + 21 + 1,
+        "downside_volatility": 63 + 1,
     }
     try:
         return minimums[name]

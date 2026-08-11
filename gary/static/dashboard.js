@@ -983,10 +983,29 @@ function renderOptionsResult(o) {
 
 function renderResearch(r) {
   document.getElementById('research_result').style.display = 'block';
+  const ho = r.holdout || {};
+  const reg = ho.regime;
+  let holdoutLine = '';
+  if (ho.combined) {
+    const beatColor = ho.beats_benchmark ? 'var(--green)' : 'var(--red)';
+    holdoutLine =
+      `<div style="margin-top:6px;">Out-of-sample holdout (${ho.rebalances} rebalances): ` +
+      `survivors <strong style="color:${beatColor}">${pct(ho.combined.return_pct)}</strong> ` +
+      `vs buy&amp;hold ${pct(ho.benchmark_return_pct)} \u2014 beats: ` +
+      `<strong style="color:${beatColor}">${ho.beats_benchmark ? 'yes' : 'no'}</strong>`;
+    if (reg) {
+      holdoutLine += ` \u00b7 by regime: bull ${pct(reg.bull_return_pct)} (${reg.bull_periods}p), ` +
+        `bear ${pct(reg.bear_return_pct)} (${reg.bear_periods}p)`;
+    }
+    holdoutLine += `</div>`;
+  } else {
+    holdoutLine = `<div style="margin-top:6px;">Holdout buy&amp;hold ${pct(ho.benchmark_return_pct)} ` +
+      `\u2014 no survivors to test.</div>`;
+  }
   document.getElementById('rz_verdict').innerHTML =
     `<strong>Verdict:</strong> ${esc(r.verdict)} <span class="muted">` +
-    `(universe ${r.universe.length}, ${r.rebalances} rebalances, ${r.n_trials} configs tested; ` +
-    `buy&amp;hold ${pct(r.benchmark.return_pct)}, CAGR ${(r.benchmark.cagr_pct || 0).toFixed(1)}%)</span>`;
+    `(universe ${r.universe.length}, ${r.rebalances} rebalances, ${r.n_trials} configs; ` +
+    `research buy&amp;hold ${pct(r.research_benchmark_pct)})</span>` + holdoutLine;
   document.getElementById('rz_factors').innerHTML = (r.factors || []).map(f => {
     const c = f.survivor ? 'var(--green)' : 'var(--muted)';
     return `<tr style="border-top:1px solid ${GRID};${f.survivor ? 'font-weight:700;' : ''}">

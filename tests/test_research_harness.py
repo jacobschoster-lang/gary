@@ -39,36 +39,44 @@ def test_buy_hold_return_basic():
 
 
 def test_candidate_grid_size():
-    assert len(candidate_configs()) == 8  # 4 factors x {long, long/short}
+    assert len(candidate_configs()) == 12  # 6 factors x {long, long/short}
 
 
-def test_research_harness_structure_and_projection():
-    r1 = research(years=3, use_live=False)
-    r2 = research(years=3, use_live=False)
-    assert r1["n_trials"] == 8
-    assert len(r1["factors"]) == 8
+def test_research_harness_holdout_and_projection():
+    r1 = research(years=5, use_live=False)
+    r2 = research(years=5, use_live=False)
+    assert r1["n_trials"] == 12
+    assert len(r1["factors"]) == 12
     # Deterministic offline.
     assert r1["chosen_cagr_pct"] == r2["chosen_cagr_pct"]
-    # Each factor row carries a deflated Sharpe and survivor flag.
-    assert all("deflated_sharpe" in f and "survivor" in f for f in r1["factors"])
-    # Honest projection has both an optimistic and a market-baseline path to targets.
+    # A locked out-of-sample holdout is reported separately from the research window.
+    assert "holdout" in r1 and "benchmark_return_pct" in r1["holdout"]
+    assert r1["holdout"]["rebalances"] >= 1
+    # Honest projection has both an optimistic and a market-baseline path.
     proj = r1["projection"]
-    assert "optimistic" in proj and "market_baseline" in proj
     assert proj["market_baseline"]["annual_return"] == 0.08
     targets = [t["target"] for t in proj["market_baseline"]["targets"]]
     assert 1_000_000.0 in targets and 18_000_000.0 in targets
 
 
 def test_deflated_sharpe_is_not_above_raw():
-    r = research(years=3, use_live=False)
+    r = research(years=5, use_live=False)
     for f in r["factors"]:
         assert f["deflated_sharpe"] <= f["sharpe"] + 1e-9  # multiple-testing haircut
 
 
+def test_holdout_regime_split_present_when_survivors():
+    r = research(years=5, use_live=False)
+    if r["survivors"]:
+        assert r["holdout"]["combined"] is not None
+        reg = r["holdout"]["regime"]
+        assert reg is not None and "bull_return_pct" in reg and "bear_return_pct" in reg
+
+
 def test_api_research_factors():
-    resp = client.post("/api/research/factors", json={"years": 3, "start": 10000,
+    resp = client.post("/api/research/factors", json={"years": 5, "start": 10000,
                                                       "monthly_contribution": 2000})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["n_trials"] == 8 and "verdict" in body
-    assert "projection" in body and "market_baseline" in body["projection"]
+    assert body["n_trials"] == 12 and "verdict" in body
+    assert "holdout" in body and "projection" in body

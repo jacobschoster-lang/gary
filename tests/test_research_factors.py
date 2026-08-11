@@ -88,7 +88,10 @@ def test_score_unknown_name_raises():
 
 
 def test_factors_registry_has_exactly_four_keys():
-    assert set(factors.FACTORS) == {"momentum", "short_reversal", "low_volatility", "trend"}
+    assert set(factors.FACTORS) == {
+        "momentum", "short_reversal", "low_volatility", "trend",
+        "long_term_reversal", "downside_volatility",
+    }
 
 
 def test_min_history_returns_sane_positive_ints():
