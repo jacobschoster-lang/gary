@@ -691,23 +691,40 @@ async function loadContentTrends() {
 const pct = n => (Number(n || 0) >= 0 ? '+' : '') + Number(n || 0).toFixed(2) + '%';
 
 // Cursor deeplink: installs robinhood-trading MCP then user hits Connect for OAuth.
+// Config MUST include type:"http" for remote servers — url-only payloads often fail
+// to open the install card (Cursor Customize migration / deeplink handler).
 const ROBINHOOD_MCP_URL = 'https://agent.robinhood.com/mcp/trading';
+const ROBINHOOD_MCP_CONFIG = {type: 'http', url: ROBINHOOD_MCP_URL};
 const ROBINHOOD_MCP_DEEPLINK =
   'cursor://anysphere.cursor-deeplink/mcp/install?name=robinhood-trading&config=' +
-  btoa(JSON.stringify({url: ROBINHOOD_MCP_URL}));
+  btoa(JSON.stringify(ROBINHOOD_MCP_CONFIG)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
 function mcpConnect() {
   const mcpEl = document.getElementById('tb_mcp');
+  // Prefer opening the deeplink; also copy a pasteable URL for browsers that
+  // drop cursor:// handlers or Cursor builds with broken install cards.
   try {
-    window.location.href = ROBINHOOD_MCP_DEEPLINK;
-  } catch (_) { /* fall through */ }
+    const a = document.createElement('a');
+    a.href = ROBINHOOD_MCP_DEEPLINK;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (_) {
+    try { window.location.href = ROBINHOOD_MCP_DEEPLINK; } catch (__) { /* fall through */ }
+  }
+  const pasteHint =
+    'If nothing opens: Cursor Settings → Tools & MCPs → Add → URL ' + ROBINHOOD_MCP_URL +
+    ' → Connect. Or paste this into a browser on the desktop machine:\n' + ROBINHOOD_MCP_DEEPLINK;
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(ROBINHOOD_MCP_URL).catch(() => {});
+    navigator.clipboard.writeText(ROBINHOOD_MCP_DEEPLINK).catch(() => {
+      navigator.clipboard.writeText(ROBINHOOD_MCP_URL).catch(() => {});
+    });
   }
   if (mcpEl) {
     mcpEl.textContent =
-      'Opening Cursor MCP install… After it appears, click Connect under Tools & MCPs, authorize Robinhood, then set ROBINHOOD_MCP_TOKEN. URL also copied: ' +
-      ROBINHOOD_MCP_URL;
+      'Tried Cursor MCP install deeplink (copied). After install, click Connect and authorize Robinhood. ' +
+      pasteHint;
     mcpEl.style.color = 'var(--sky, #0ea5e9)';
   }
 }
