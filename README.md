@@ -126,7 +126,13 @@ Live equities (optional) go through Robinhood's official Agentic Trading MCP:
 3. Set `ROBINHOOD_MCP_TOKEN` to enable the HTTP seams
    (`GET /api/trading/mcp/portfolio`, `POST /api/trading/mcp/quotes`,
    `POST /api/trading/mcp/review`). Placement (`POST /api/trading/mcp/place`)
-   also requires `TRADING_LIVE=1`. The paper engine is not auto-routed live.
+   also requires `TRADING_LIVE=1`.
+4. **One live model step** (not a from-scratch backtest): dashboard
+   **Preview live step** / **Execute live step**, or `POST /api/trading/live/step`
+   with `{ "dry_run": true }`. Preview reviews only. Execute needs
+   `TRADING_LIVE=1`. Caps: $250/order, $1,500/step, equities only, long-only.
+   Paper **Run** / **Optimize** stay paper. This is not a 10%/month forecast —
+   walk-forward OOS on this model was ~flat.
 
 Repo config lives in `.cursor/mcp.json`. If a `cursor://` install link does
 nothing, paste this on the desktop machine:
@@ -286,3 +292,4 @@ Run/inspect manually:
 - `POST /api/trading/mcp/quotes` — body `{"symbols": ["AAPL"]}`
 - `POST /api/trading/mcp/review` — simulate an equity order (no fill)
 - `POST /api/trading/mcp/place` — place an equity order (`TRADING_LIVE=1`)
+- `POST /api/trading/live/step` — one capped model tick on the agentic account (`{"dry_run": true}` default; execute needs `TRADING_LIVE=1`)

@@ -138,8 +138,15 @@ Trading bot (paper):
  Chat `cursor://` links often fail — paste the deeplink or add the URL manually.
  Read/review/place HTTP seams: `GET /api/trading/mcp/portfolio`,
  `POST /api/trading/mcp/quotes`, `POST /api/trading/mcp/review`,
- `POST /api/trading/mcp/place`. Engine→live routing is still not wired; the bot
- stays on `PaperBroker` until deliberately switched.
+ `POST /api/trading/mcp/place`. The **only** model→live path is
+ `POST /api/trading/live/step` (`gary/trading/live.py` `step_robinhood`): one
+ forward tick from the **agentic account snapshot** (not the paper $10k book).
+ Equities only (crypto dropped), long-only (`long_short` → `cross_sectional`),
+ caps `$250`/order and `$1,500`/step (`GARY_LIVE_MAX_ORDER_USD` /
+ `GARY_LIVE_MAX_GROSS_USD`). Default `dry_run=True` calls
+ `review_equity_order` only; execute needs `TRADING_LIVE=1`. Paper
+ `simulate` / Run / Optimize never send orders. Do not enable live in
+ `render.yaml`. Cursor OAuth does not populate `ROBINHOOD_MCP_TOKEN`.
 - Live crypto seam (`gary/trading/robinhood.py`): builds + Ed25519-signs official
  Robinhood Crypto requests via an **injectable signer** (no hard crypto dep;
  `default_ed25519_signer` uses `cryptography`/`PyNaCl` if installed). Request/

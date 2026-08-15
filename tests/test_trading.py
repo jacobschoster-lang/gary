@@ -666,6 +666,7 @@ def test_api_trading_mcp_endpoints_require_token(tmp_path, monkeypatch):
         "/api/trading/mcp/review",
         json={"symbol": "AAPL", "side": "buy", "dollar_amount": 100},
     ).status_code == 400
+    assert client.post("/api/trading/live/step", json={"dry_run": True}).status_code == 400
 
 
 def test_api_trading_mcp_review_with_fake_caller(tmp_path, monkeypatch):
@@ -717,14 +718,158 @@ def test_dashboard_serves_robinhood_mcp_deeplink():
 
     html = client.get("/").text
     assert "Connect Robinhood MCP" in html
-    assert "/static/dashboard.js?v=11" in html
+    assert "Preview live step" in html
+    assert "Execute live step" in html
+    assert "/static/dashboard.js?v=12" in html
 
     js = Path("gary/static/dashboard.js").read_text(encoding="utf-8")
     assert "type: 'http'" in js
     assert "agent.robinhood.com/mcp/trading" in js
     assert "cursor://anysphere.cursor-deeplink/mcp/install?name=robinhood-trading" in js
+    assert "liveStep" in js
+    assert "/api/trading/live/step" in js
 
     mcp_cfg = json.loads(Path(".cursor/mcp.json").read_text(encoding="utf-8"))
     server = mcp_cfg["mcpServers"]["robinhood-trading"]
     assert server["type"] == "http"
     assert server["url"] == "https://agent.robinhood.com/mcp/trading"
+
+
+# ---------- live MCP step (capped, review-first) ----------
+def test_live_config_drops_crypto_and_disables_shorts():
+    from gary.trading.live import live_config
+
+    cfg = live_config(BotConfig(
+        universe=["AAPL", "BTC", "ETH", "SOL", "MSFT"],
+        selection_mode="long_short",
+    ))
+    assert cfg.selection_mode == "cross_sectional"
+    assert "BTC" not in cfg.universe and "ETH" not in cfg.universe
+    assert "AAPL" in cfg.universe and "MSFT" in cfg.universe
+
+
+def test_paper_from_mcp_snapshot():
+    from gary.trading.live import paper_from_snapshot
+
+    paper = paper_from_snapshot(
+        {"buying_power": 3210.5},
+        {"positions": [
+            {"symbol": "AAPL", "quantity": 2, "average_price": 180.0},
+            {"symbol": "BTC", "quantity": 0.1, "average_price": 60_000.0},
+        ]},
+        BotConfig(),
+    )
+    assert paper.cash == 3210.5
+    assert paper.positions["AAPL"].quantity == 2
+    assert paper.positions["AAPL"].avg_cost == 180.0
+    assert "BTC" not in paper.positions
+
+
+def test_live_router_caps_reviews_and_skips_crypto():
+    from gary.trading.live import LiveRouter
+    from gary.trading.robinhood_mcp import RobinhoodMcpBroker
+
+    calls: list = []
+    mcp = RobinhoodMcpBroker(
+        token="tok", live_enabled=False, account_number="AGENTIC-1",
+        caller=_mcp_fake_caller(calls),
+    )
+    router = LiveRouter(
+        PaperBroker(cash=10_000), mcp, dry_run=True, max_order=250, max_gross=1500,
+    )
+    fill = router.buy("AAPL", 1_000.0, 100.0, on="d1")
+    assert fill is not None
+    assert fill.notional == 250.0
+    tools = [c[0] for c in calls]
+    assert "review_equity_order" in tools
+    assert "place_equity_order" not in tools
+    assert calls[0][1]["dollar_amount"] == 250.0
+
+    assert router.buy("BTC", 100.0, 100.0) is None
+    assert router.short("AAPL", 100.0, 100.0) is None
+    assert any("crypto" in s["reason"] for s in router.skipped)
+    assert any("shorts" in s["reason"] for s in router.skipped)
+
+
+def test_live_router_execute_places_when_live_enabled():
+    from gary.trading.live import LiveRouter
+    from gary.trading.robinhood_mcp import RobinhoodMcpBroker
+
+    calls: list = []
+    mcp = RobinhoodMcpBroker(
+        token="tok", live_enabled=True, account_number="AGENTIC-1",
+        caller=_mcp_fake_caller(calls),
+    )
+    router = LiveRouter(
+        PaperBroker(cash=10_000), mcp, dry_run=False, max_order=250, max_gross=1500,
+    )
+    fill = router.buy("MSFT", 200.0, 100.0, on="d1")
+    assert fill is not None
+    tools = [c[0] for c in calls]
+    assert "review_equity_order" in tools
+    assert "place_equity_order" in tools
+    place = next(c for c in calls if c[0] == "place_equity_order")
+    assert place[1]["symbol"] == "MSFT"
+    assert place[1]["dollar_amount"] == 200.0
+
+
+def test_step_robinhood_dry_run_reviews_without_placing():
+    from gary.trading.live import step_robinhood
+    from gary.trading.robinhood_mcp import RobinhoodMcpBroker, RobinhoodMcpError
+
+    calls: list = []
+    mcp = RobinhoodMcpBroker(
+        token="tok", live_enabled=False, account_number="AGENTIC-1",
+        caller=_mcp_fake_caller(calls),
+    )
+    cfg = BotConfig(universe=["AAPL", "MSFT", "BTC"], selection_mode="per_symbol")
+    result = step_robinhood(mcp, cfg, dry_run=True, max_order=250, max_gross=1500)
+    assert result["dry_run"] is True
+    assert result["mode"] == "review"
+    tools = [c[0] for c in calls]
+    assert "get_portfolio" in tools
+    assert "get_equity_positions" in tools
+    assert "place_equity_order" not in tools
+    assert "BTC" not in result["universe"]
+
+    try:
+        step_robinhood(mcp, cfg, dry_run=False)
+    except RobinhoodMcpError as exc:
+        assert "TRADING_LIVE" in str(exc)
+    else:
+        raise AssertionError("expected execute to refuse without TRADING_LIVE")
+
+
+def test_api_trading_live_step_dry_run_and_execute_gate(tmp_path, monkeypatch):
+    monkeypatch.setenv("ROBINHOOD_MCP_TOKEN", "tok")
+    monkeypatch.setenv("ROBINHOOD_MCP_ACCOUNT", "AGENTIC-1")
+    monkeypatch.delenv("TRADING_LIVE", raising=False)
+    monkeypatch.setenv("GARY_TRADING_FILE", str(tmp_path / "trading.json"))
+    import gary.app as app_module
+    from gary.trading.robinhood_mcp import RobinhoodMcpBroker
+
+    calls: list = []
+    fake = RobinhoodMcpBroker(
+        token="tok",
+        account_number="AGENTIC-1",
+        live_enabled=False,
+        caller=_mcp_fake_caller(calls),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "RobinhoodMcpBroker",
+        type("M", (), {"from_env": staticmethod(lambda env=None: fake)}),
+    )
+    app_module.trading_store = TradingStore()
+
+    preview = client.post("/api/trading/live/step", json={"dry_run": True})
+    assert preview.status_code == 200
+    body = preview.json()
+    assert body["dry_run"] is True
+    assert "place_equity_order" not in [c[0] for c in calls]
+    assert body["caps"]["max_order_usd"] == 250.0
+
+    execute = client.post("/api/trading/live/step", json={"dry_run": False})
+    assert execute.status_code == 400
+    assert "TRADING_LIVE" in execute.json()["detail"]
+

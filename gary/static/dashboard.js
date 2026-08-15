@@ -786,6 +786,21 @@ function renderTrading(data) {
     }
   }
 
+  const prevBtn = document.getElementById('btn_live_preview');
+  const execBtn = document.getElementById('btn_live_exec');
+  const liveNote = document.getElementById('tb_live_note');
+  if (prevBtn) prevBtn.style.display = data.robinhood_mcp_configured ? 'inline-block' : 'none';
+  if (execBtn) execBtn.style.display = (data.robinhood_mcp_configured && data.live_trading_enabled) ? 'inline-block' : 'none';
+  if (liveNote) {
+    if (data.live_trading_enabled) {
+      liveNote.textContent = 'Live step: one equities-only tick on the Agentic account, capped at $250/order (not a 10%/month promise). Paper Run/Optimize never send orders.';
+    } else if (data.robinhood_mcp_configured) {
+      liveNote.textContent = 'MCP is configured. Preview reviews orders only. Execute requires TRADING_LIVE=1 in the server env.';
+    } else {
+      liveNote.textContent = '';
+    }
+  }
+
   const exit = (cfg.trailing_stop_pct || 0) > 0
     ? `trailing stop ${(cfg.trailing_stop_pct * 100).toFixed(0)}% (let winners run)`
     : `take-profit ${((cfg.take_profit_pct || 0) * 100).toFixed(0)}%`;
@@ -984,6 +999,29 @@ async function resetBot() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
     renderTrading(data);
+  } catch (e) {
+    showAlert('trading_alert', e.message);
+  }
+}
+
+async function liveStep(dryRun) {
+  try {
+    showAlert('trading_alert', '');
+    if (!dryRun && !confirm('Send ONE live step to the Robinhood Agentic account? Caps: $250/order, $1500/step, equities only. Paper bot stays paper.')) {
+      return;
+    }
+    const data = await apiFetch('/api/trading/live/step', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dry_run: !!dryRun }),
+    });
+    const note = document.getElementById('tb_live_note');
+    if (note) {
+      const routed = (data.routed || []).map(r => `${r.action} ${r.side} ${r.symbol}`).join(', ') || 'none';
+      const skipped = (data.skipped || []).map(s => `${s.symbol}: ${s.reason}`).join('; ');
+      note.textContent = `${data.dry_run ? 'Preview' : 'LIVE'} ${data.date} · routed: ${routed}` +
+        (skipped ? ` · skipped: ${skipped}` : '') + ' · ' + (data.note || '');
+      note.style.color = data.dry_run ? 'var(--muted)' : 'var(--amber, #c9a227)';
+    }
   } catch (e) {
     showAlert('trading_alert', e.message);
   }

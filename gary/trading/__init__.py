@@ -10,6 +10,7 @@ from gary.trading.engine import TradingBot
 from gary.trading.models import BotConfig, Fill, Position, Signal
 from gary.trading.optimize import candidate_configs, optimize
 from gary.trading.robinhood import RobinhoodCryptoBroker, RobinhoodError
+from gary.trading.live import step_robinhood
 from gary.trading.robinhood_mcp import RobinhoodMcpBroker, RobinhoodMcpError
 from gary.trading.store import TradingStore
 
@@ -26,6 +27,7 @@ __all__ = [
     "RobinhoodError",
     "RobinhoodMcpBroker",
     "RobinhoodMcpError",
+    "step_robinhood",
     "optimize",
     "candidate_configs",
 ]

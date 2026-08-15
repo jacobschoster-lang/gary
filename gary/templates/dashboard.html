@@ -230,7 +230,10 @@
           <button id="btn_run_bot" type="button" class="btn-green">Run paper bot</button>
           <button id="btn_optimize_bot" type="button" class="btn-purple">Optimize strategy</button>
           <button id="btn_reset_bot" type="button" class="btn-gray">Reset to $10k</button>
+          <button id="btn_live_preview" type="button" class="btn-slate" onclick="liveStep(true)" style="display:none;">Preview live step</button>
+          <button id="btn_live_exec" type="button" class="btn-sky" onclick="liveStep(false)" style="display:none;">Execute live step</button>
         </div>
+        <div class="muted" id="tb_live_note" style="margin-top:8px;font-size:12px;"></div>
         <div class="muted" id="tb_active" style="margin-top:8px;font-size:12px;"></div>
         <div class="muted" id="tb_meta" style="margin-top:4px;font-size:12px;"></div>
       </div>
@@ -372,6 +375,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/dashboard.js?v=11"></script>
+  <script src="/static/dashboard.js?v=12"></script>
 </body>
 </html>
