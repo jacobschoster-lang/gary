@@ -580,6 +580,31 @@ def test_robinhood_mcp_refuses_orders_when_not_live():
         raise AssertionError("expected RobinhoodMcpError when not live")
 
 
+def test_status_does_not_mix_synthetic_fills_with_live_quotes(monkeypatch):
+    """AMD filled at ~$147 synthetic must not be marked at a $514 live quote."""
+
+    def fake_series(symbol, days=90, use_live=True):
+        n = max(days, 60)
+        if str(symbol).upper() == "AMD":
+            return [514.0] * n if use_live else [147.0] * n
+        return [100.0] * n
+
+    monkeypatch.setattr("gary.trading.prices.price_series", fake_series)
+    broker = PaperBroker(cash=0.0)
+    broker.positions["AMD"] = Position(symbol="AMD", quantity=20.0, avg_cost=147.0)
+    status = TradingBot(config=BotConfig(universe=["AMD"]), broker=broker).status()
+    # 20 * 147 = 2,940. Mixing live would be 20 * 514 = 10,280.
+    assert status["account"]["equity"] == 2940.0
+    assert status["mark_sources"]["AMD"] == "synthetic"
+    assert "synthetic" in (status.get("mark_note") or "")
+
+    live_book = PaperBroker(cash=0.0)
+    live_book.positions["AMD"] = Position(symbol="AMD", quantity=20.0, avg_cost=500.0)
+    live_status = TradingBot(config=BotConfig(universe=["AMD"]), broker=live_book).status()
+    assert live_status["mark_sources"]["AMD"] == "live"
+    assert live_status["account"]["equity"] == 10280.0
+
+
 # ---------- API ----------
 def test_api_trading_run_and_status(tmp_path, monkeypatch):
     monkeypatch.setenv("GARY_TRADING_FILE", str(tmp_path / "trading.json"))
@@ -692,7 +717,7 @@ def test_dashboard_serves_robinhood_mcp_deeplink():
 
     html = client.get("/").text
     assert "Connect Robinhood MCP" in html
-    assert "/static/dashboard.js?v=10" in html
+    assert "/static/dashboard.js?v=11" in html
 
     js = Path("gary/static/dashboard.js").read_text(encoding="utf-8")
     assert "type: 'http'" in js

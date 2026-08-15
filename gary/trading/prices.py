@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import random
+from typing import Any
 
 from gary.data import http
 
@@ -100,6 +101,37 @@ def price_series(symbol: str, days: int = 90, use_live: bool = True) -> list[flo
 
 def latest_prices(symbols: list[str], use_live: bool = True) -> dict[str, float]:
     return {s: price_series(s, 60, use_live=use_live)[-1] for s in symbols}
+
+
+def mark_prices(
+    symbols: list[str],
+    positions: dict[str, Any] | None = None,
+    *,
+    use_live: bool = True,
+) -> tuple[dict[str, float], dict[str, str]]:
+    """Mark-to-market without mixing synthetic fills and live quotes.
+
+    Each held name is priced from whichever source (live vs synthetic) is
+    closer to its average cost — the family it was almost certainly filled
+    in. Mixing those families (e.g. AMD filled at ~$147 synthetic, marked
+    at ~$514 live) invents huge phantom P&L.
+    """
+    positions = positions or {}
+    prices: dict[str, float] = {}
+    sources: dict[str, str] = {}
+    ordered = list(dict.fromkeys([*symbols, *positions]))
+    for sym in ordered:
+        syn = price_series(sym, 60, use_live=False)[-1]
+        live = price_series(sym, 60, use_live=True)[-1] if use_live else syn
+        pos = positions.get(sym)
+        cost = float(getattr(pos, "avg_cost", 0.0) or 0.0) if pos is not None else 0.0
+        if cost > 0 and abs(live - cost) > abs(syn - cost):
+            prices[sym], sources[sym] = syn, "synthetic"
+        elif use_live:
+            prices[sym], sources[sym] = live, "live"
+        else:
+            prices[sym], sources[sym] = syn, "synthetic"
+    return prices, sources
 
 
 def annualized_return(series: list[float]) -> float:

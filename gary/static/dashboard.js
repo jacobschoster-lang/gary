@@ -762,6 +762,10 @@ function renderTrading(data) {
     (data.robinhood_configured ? ' · Robinhood key detected' : '') +
     (data.robinhood_mcp_configured ? ' · Robinhood MCP configured' : '');
 
+  if (data.mark_note) {
+    showAlert('trading_alert', data.mark_note, 'info');
+  }
+
   const mcpEl = document.getElementById('tb_mcp');
   const mcpBtn = document.getElementById('tb_mcp_connect');
   const mcpRefresh = document.getElementById('tb_mcp_refresh');
