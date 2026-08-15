@@ -690,6 +690,45 @@ async function loadContentTrends() {
 // ---------- Trading ----------
 const pct = n => (Number(n || 0) >= 0 ? '+' : '') + Number(n || 0).toFixed(2) + '%';
 
+// Cursor deeplink: installs robinhood-trading MCP then user hits Connect for OAuth.
+// Config MUST include type:"http" for remote servers — url-only payloads often fail
+// to open the install card (Cursor Customize migration / deeplink handler).
+const ROBINHOOD_MCP_URL = 'https://agent.robinhood.com/mcp/trading';
+const ROBINHOOD_MCP_CONFIG = {type: 'http', url: ROBINHOOD_MCP_URL};
+const ROBINHOOD_MCP_DEEPLINK =
+  'cursor://anysphere.cursor-deeplink/mcp/install?name=robinhood-trading&config=' +
+  btoa(JSON.stringify(ROBINHOOD_MCP_CONFIG)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+function mcpConnect() {
+  const mcpEl = document.getElementById('tb_mcp');
+  // Prefer opening the deeplink; also copy a pasteable URL for browsers that
+  // drop cursor:// handlers or Cursor builds with broken install cards.
+  try {
+    const a = document.createElement('a');
+    a.href = ROBINHOOD_MCP_DEEPLINK;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (_) {
+    try { window.location.href = ROBINHOOD_MCP_DEEPLINK; } catch (__) { /* fall through */ }
+  }
+  const pasteHint =
+    'If nothing opens: Cursor Settings → Tools & MCPs → Add → URL ' + ROBINHOOD_MCP_URL +
+    ' → Connect. Or paste this into a browser on the desktop machine:\n' + ROBINHOOD_MCP_DEEPLINK;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(ROBINHOOD_MCP_DEEPLINK).catch(() => {
+      navigator.clipboard.writeText(ROBINHOOD_MCP_URL).catch(() => {});
+    });
+  }
+  if (mcpEl) {
+    mcpEl.textContent =
+      'Tried Cursor MCP install deeplink (copied). After install, click Connect and authorize Robinhood. ' +
+      pasteHint;
+    mcpEl.style.color = 'var(--sky, #0ea5e9)';
+  }
+}
+
 function renderTrading(data) {
   const acct = data.account || {};
   const cfg = data.config || {};
@@ -720,7 +759,28 @@ function renderTrading(data) {
     `max drawdown ${(data.max_drawdown_pct || 0).toFixed(1)}% · fees ${money(data.fees_paid)}<br>` +
     `${data.num_trades || 0} trades · turnover ${(m.turnover || 0).toFixed(1)}x · ${data.days || 0} days · ` +
     `data: ${data.live_data ? 'live' : 'offline sample'} · mode: ${data.mode || 'paper'}` +
-    (data.robinhood_configured ? ' · Robinhood key detected' : '');
+    (data.robinhood_configured ? ' · Robinhood key detected' : '') +
+    (data.robinhood_mcp_configured ? ' · Robinhood MCP configured' : '');
+
+  const mcpEl = document.getElementById('tb_mcp');
+  const mcpBtn = document.getElementById('tb_mcp_connect');
+  const mcpRefresh = document.getElementById('tb_mcp_refresh');
+  if (mcpEl) {
+    if (data.robinhood_mcp_configured) {
+      const live = data.live_trading_enabled ? 'LIVE enabled' : 'live disabled (paper-safe)';
+      mcpEl.textContent =
+        `Robinhood MCP ready (${live}) · ${data.robinhood_mcp_url || 'agent.robinhood.com/mcp/trading'}`;
+      mcpEl.style.color = data.live_trading_enabled ? 'var(--amber, #c9a227)' : 'var(--muted)';
+      if (mcpBtn) mcpBtn.textContent = 'Reconnect Robinhood MCP';
+      if (mcpRefresh) mcpRefresh.style.display = 'inline-block';
+    } else {
+      mcpEl.textContent =
+        'Not connected — click Connect Robinhood MCP, then in Cursor: Settings → Tools & MCPs → Connect, authorize Robinhood, and set ROBINHOOD_MCP_TOKEN.';
+      mcpEl.style.color = 'var(--muted)';
+      if (mcpBtn) mcpBtn.textContent = 'Connect Robinhood MCP';
+      if (mcpRefresh) mcpRefresh.style.display = 'none';
+    }
+  }
 
   const exit = (cfg.trailing_stop_pct || 0) > 0
     ? `trailing stop ${(cfg.trailing_stop_pct * 100).toFixed(0)}% (let winners run)`

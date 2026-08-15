@@ -123,16 +123,23 @@ Trading bot (paper):
  runs one forward step for a scheduler (paper-only, safe; writes a manifest to
  `out/`). It never sends real orders.
 - Live via Robinhood MCP (`gary/trading/robinhood_mcp.py`, preferred live path):
- `RobinhoodMcpBroker` routes the bot's orders to Robinhood's official MCP trading
- server (`https://agent.robinhood.com/mcp/trading`) as tool calls. It implements
- the same `Broker` surface as `PaperBroker`, is gated on `ROBINHOOD_MCP_TOKEN` +
- `TRADING_LIVE=1`, and takes an **injectable `caller(tool, args)`** (tests use a
- fake; a real run uses the built-in JSON-RPC-over-HTTP client, or a caller that
- forwards to Cursor's `CallMcpTool`). Tool names are placeholders overridable via
- `ROBINHOOD_MCP_TOOL_*` — **confirm them with `GetMcpTools` after the MCP server
- is added + authenticated** (cloud agents need it authenticated in the Cursor
- desktop IDE; only `cursor-cloud` MCP is present by default). Engine→live routing
- is still not wired; the bot stays on `PaperBroker` until deliberately switched.
+ `RobinhoodMcpBroker` routes orders to Robinhood's official MCP trading server
+ (`https://agent.robinhood.com/mcp/trading`) using the documented equity tools
+ (`get_accounts`, `get_portfolio`, `get_equity_positions`, `get_equity_quotes`,
+ `get_equity_orders`, `review_equity_order`, `place_equity_order`,
+ `cancel_equity_order`). Orders always run `review_equity_order` first unless
+ skipped. Gated on `ROBINHOOD_MCP_TOKEN` + `TRADING_LIVE=1`; optional
+ `ROBINHOOD_MCP_ACCOUNT` (auto-picked from agentic accounts otherwise). Injectable
+ `caller(tool, args)` (tests use a fake). `.cursor/mcp.json` registers the server
+ at the official URL with `"type": "http"` (required for Cursor install cards).
+ In Cursor: Settings → Tools & MCPs → **Connect** (desktop IDE OAuth; cloud
+ agents do not get Robinhood MCP by default). Dashboard Trading tab has a
+ **Connect Robinhood MCP** button (Cursor deeplink with `type: http` config).
+ Chat `cursor://` links often fail — paste the deeplink or add the URL manually.
+ Read/review/place HTTP seams: `GET /api/trading/mcp/portfolio`,
+ `POST /api/trading/mcp/quotes`, `POST /api/trading/mcp/review`,
+ `POST /api/trading/mcp/place`. Engine→live routing is still not wired; the bot
+ stays on `PaperBroker` until deliberately switched.
 - Live crypto seam (`gary/trading/robinhood.py`): builds + Ed25519-signs official
  Robinhood Crypto requests via an **injectable signer** (no hard crypto dep;
  `default_ed25519_signer` uses `cryptography`/`PyNaCl` if installed). Request/

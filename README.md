@@ -109,6 +109,32 @@ distance from the search center.
 
 Params: `city`, `state`, `radius` (mi), `min_acres`, `max_price`.
 
+## Paper trading + Robinhood MCP
+
+The dashboard **Trading** tab (`gary/trading/`) is a **paper** bot by default
+(`PaperBroker`) — no real money. It blends momentum, SMA crossover, and
+mean-reversion with risk rules, walk-forward optimize, and Monte Carlo.
+
+Live equities (optional) go through Robinhood's official Agentic Trading MCP:
+
+`https://agent.robinhood.com/mcp/trading`
+
+1. Click **Connect Robinhood MCP** on the Trading tab (or add the URL in Cursor
+   Settings → Tools & MCPs with transport **HTTP** / `"type": "http"`).
+2. Click **Connect** and complete Robinhood OAuth in the **desktop** IDE
+   (cloud agents do not inherit that session).
+3. Set `ROBINHOOD_MCP_TOKEN` to enable the HTTP seams
+   (`GET /api/trading/mcp/portfolio`, `POST /api/trading/mcp/quotes`,
+   `POST /api/trading/mcp/review`). Placement (`POST /api/trading/mcp/place`)
+   also requires `TRADING_LIVE=1`. The paper engine is not auto-routed live.
+
+Repo config lives in `.cursor/mcp.json`. If a `cursor://` install link does
+nothing, paste this on the desktop machine:
+
+```
+cursor://anysphere.cursor-deeplink/mcp/install?name=robinhood-trading&config=eyJ0eXBlIjoiaHR0cCIsInVybCI6Imh0dHBzOi8vYWdlbnQucm9iaW5ob29kLmNvbS9tY3AvdHJhZGluZyJ9
+```
+
 ## Development
 
 Requires Python 3.10+.
@@ -252,3 +278,11 @@ Run/inspect manually:
 - `GET /api/thumbnail.svg?topic=...` — rendered thumbnail (SVG)
 - `POST /api/pipeline/run` — body `{"topic": "..."?}` → full daily content plan
 - `GET /api/videos` — published videos + performance metrics
+- `GET /api/trading/status` — paper-bot status + MCP/live flags
+- `POST /api/trading/run` — body `{"days": N}` → from-scratch paper backtest
+- `POST /api/trading/optimize` — walk-forward optimize, apply on paper
+- `POST /api/trading/reset` — reset paper account
+- `GET /api/trading/mcp/portfolio` — Robinhood MCP portfolio (needs token)
+- `POST /api/trading/mcp/quotes` — body `{"symbols": ["AAPL"]}`
+- `POST /api/trading/mcp/review` — simulate an equity order (no fill)
+- `POST /api/trading/mcp/place` — place an equity order (`TRADING_LIVE=1`)

@@ -1,7 +1,8 @@
 """Paper trading bot: strategies + risk rules on a simulated brokerage account.
 
 Runs fully offline/deterministically (:class:`PaperBroker` + synthetic price
-fallback). Going live is an env-gated seam (:mod:`gary.trading.robinhood`).
+fallback). Going live is an env-gated seam (:mod:`gary.trading.robinhood_mcp`
+for equities via Robinhood MCP, :mod:`gary.trading.robinhood` for crypto).
 """
 
 from gary.trading.broker import Broker, PaperBroker

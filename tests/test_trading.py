@@ -457,41 +457,123 @@ def test_robinhood_place_order_blocked_when_not_live():
 
 
 # ---------- robinhood MCP live-execution adapter ----------
+def _mcp_fake_caller(calls: list):
+    """Respond to official Robinhood MCP tool names used by RobinhoodMcpBroker."""
+
+    def caller(tool: str, args: dict):
+        calls.append((tool, dict(args)))
+        if tool == "get_accounts":
+            return {"data": {"accounts": [{
+                "account_number": "AGENTIC-1",
+                "agentic_allowed": True,
+                "is_default": True,
+            }]}}
+        if tool == "review_equity_order":
+            return {"data": {"estimated_cost": 100.0, "alerts": []}}
+        if tool == "place_equity_order":
+            return {"data": {"order": {"id": "ord-1", **args}}}
+        if tool == "get_portfolio":
+            return {"data": {"total_value": 10_000.0, "buying_power": 10_000.0}}
+        if tool == "get_equity_quotes":
+            return {"data": {"results": [
+                {"quote": {"symbol": s, "last": 100.0}} for s in args.get("symbols", [])
+            ]}}
+        if tool == "get_equity_positions":
+            return {"data": {"positions": []}}
+        if tool == "cancel_equity_order":
+            return {"data": {"order": {"id": args["order_id"], "state": "cancelled"}}}
+        return {"data": {}}
+
+    return caller
+
+
 def test_robinhood_mcp_env_gating_and_tool_overrides():
     from gary.trading import RobinhoodMcpBroker
 
     assert RobinhoodMcpBroker.from_env(env={}) is None  # no token -> not configured
     broker = RobinhoodMcpBroker.from_env(env={
-        "ROBINHOOD_MCP_TOKEN": "tok", "TRADING_LIVE": "1",
-        "ROBINHOOD_MCP_TOOL_PLACE_ORDER": "submit_order",
+        "ROBINHOOD_MCP_TOKEN": "tok",
+        "TRADING_LIVE": "1",
+        "ROBINHOOD_MCP_ACCOUNT": "AGENTIC-9",
+        "ROBINHOOD_MCP_TOOL_PLACE_EQUITY_ORDER": "submit_equity_order",
     })
     assert broker is not None
     assert broker.live_enabled is True
-    assert broker.tools["place_order"] == "submit_order"  # env override applied
+    assert broker.account_number == "AGENTIC-9"
+    assert broker.tools["place_equity_order"] == "submit_equity_order"
+    assert broker.tools["review_equity_order"] == "review_equity_order"
     assert broker.url.endswith("/mcp/trading")
 
 
 def test_robinhood_mcp_routes_orders_through_caller():
     from gary.trading import RobinhoodMcpBroker
 
-    calls = []
-    broker = RobinhoodMcpBroker(token="tok", live_enabled=True,
-                                caller=lambda tool, args: calls.append((tool, args)) or {"id": "1"})
-    fill = broker.buy("BTC-USD", 1000.0, 100.0, on="d1")  # $1000 @ $100 -> qty 10
+    calls: list = []
+    broker = RobinhoodMcpBroker(
+        token="tok",
+        live_enabled=True,
+        account_number="AGENTIC-1",
+        caller=_mcp_fake_caller(calls),
+    )
+    fill = broker.buy("AAPL", 1000.0, 100.0, on="d1")  # $1000 @ $100 -> qty 10
     assert fill.side == "buy" and fill.quantity == 10.0
-    assert calls[-1][0] == "place_order"
-    assert calls[-1][1]["side"] == "buy" and calls[-1][1]["quantity"] == 10.0
-    broker.sell("BTC-USD", 3.0, 120.0, on="d2")
-    assert calls[-1][1] == {"symbol": "BTC-USD", "side": "sell", "type": "market", "quantity": 3.0}
+    tools_called = [c[0] for c in calls]
+    assert "review_equity_order" in tools_called
+    assert "place_equity_order" in tools_called
+    place = next(c for c in calls if c[0] == "place_equity_order")
+    assert place[1]["symbol"] == "AAPL"
+    assert place[1]["side"] == "buy"
+    assert place[1]["type"] == "market"
+    assert place[1]["quantity"] == 10.0
+    assert place[1]["account_number"] == "AGENTIC-1"
+    assert "ref_id" in place[1]
+
+    calls.clear()
+    broker.sell("AAPL", 3.0, 120.0, on="d2")
+    place = next(c for c in calls if c[0] == "place_equity_order")
+    assert place[1]["side"] == "sell"
+    assert place[1]["quantity"] == 3.0
+    assert place[1]["symbol"] == "AAPL"
+
+
+def test_robinhood_mcp_review_before_place_and_reads():
+    from gary.trading import RobinhoodMcpBroker
+
+    calls: list = []
+    broker = RobinhoodMcpBroker(
+        token="tok",
+        live_enabled=True,
+        account_number="AGENTIC-1",
+        caller=_mcp_fake_caller(calls),
+    )
+    review = broker.review_order("MSFT", "buy", dollar_amount=250.0)
+    assert review["estimated_cost"] == 100.0
+    assert calls[0][0] == "review_equity_order"
+    assert calls[0][1]["dollar_amount"] == 250.0
+    assert calls[0][1]["account_number"] == "AGENTIC-1"
+
+    quotes = broker.get_equity_quotes(["msft", "aapl"])
+    assert quotes["results"][0]["quote"]["symbol"] == "MSFT"
+    portfolio = broker.get_portfolio()
+    assert portfolio["buying_power"] == 10_000.0
+
+    # Without a pinned account, resolve_account uses get_accounts.
+    calls.clear()
+    auto = RobinhoodMcpBroker(token="tok", caller=_mcp_fake_caller(calls))
+    assert auto.resolve_account() == "AGENTIC-1"
+    assert calls[0][0] == "get_accounts"
 
 
 def test_robinhood_mcp_refuses_orders_when_not_live():
     from gary.trading import RobinhoodMcpBroker
     from gary.trading.robinhood_mcp import RobinhoodMcpError
 
-    broker = RobinhoodMcpBroker(token="tok", live_enabled=False, caller=lambda t, a: {})
+    broker = RobinhoodMcpBroker(
+        token="tok", live_enabled=False, account_number="A1",
+        caller=lambda t, a: {},
+    )
     try:
-        broker.buy("BTC-USD", 100.0, 100.0)
+        broker.buy("AAPL", 100.0, 100.0)
     except RobinhoodMcpError as exc:
         assert "TRADING_LIVE" in str(exc)
     else:
@@ -540,3 +622,84 @@ def test_api_trading_optimize(tmp_path, monkeypatch):
     # The optimized config is persisted and reflected in status.
     status = client.get("/api/trading/status").json()
     assert status["has_run"] is True
+
+
+def test_api_trading_mcp_endpoints_require_token(tmp_path, monkeypatch):
+    monkeypatch.delenv("ROBINHOOD_MCP_TOKEN", raising=False)
+    monkeypatch.setenv("GARY_TRADING_FILE", str(tmp_path / "trading.json"))
+    import gary.app as app_module
+
+    app_module.trading_store = TradingStore()
+
+    status = client.get("/api/trading/status").json()
+    assert status["robinhood_mcp_configured"] is False
+    assert status["robinhood_mcp_url"].endswith("/mcp/trading")
+
+    assert client.get("/api/trading/mcp/portfolio").status_code == 400
+    assert client.post("/api/trading/mcp/quotes", json={"symbols": ["AAPL"]}).status_code == 400
+    assert client.post(
+        "/api/trading/mcp/review",
+        json={"symbol": "AAPL", "side": "buy", "dollar_amount": 100},
+    ).status_code == 400
+
+
+def test_api_trading_mcp_review_with_fake_caller(tmp_path, monkeypatch):
+    monkeypatch.setenv("ROBINHOOD_MCP_TOKEN", "tok")
+    monkeypatch.setenv("ROBINHOOD_MCP_ACCOUNT", "AGENTIC-1")
+    monkeypatch.delenv("TRADING_LIVE", raising=False)
+    monkeypatch.setenv("GARY_TRADING_FILE", str(tmp_path / "trading.json"))
+    import gary.app as app_module
+    from gary.trading.robinhood_mcp import RobinhoodMcpBroker
+
+    calls: list = []
+    fake = RobinhoodMcpBroker(
+        token="tok",
+        account_number="AGENTIC-1",
+        live_enabled=False,
+        caller=_mcp_fake_caller(calls),
+    )
+    monkeypatch.setattr(
+        app_module,
+        "RobinhoodMcpBroker",
+        type("M", (), {"from_env": staticmethod(lambda env=None: fake)}),
+    )
+    app_module.trading_store = TradingStore()
+
+    status = client.get("/api/trading/status").json()
+    assert status["robinhood_mcp_configured"] is True
+    assert status["live_trading_enabled"] is False
+
+    review = client.post(
+        "/api/trading/mcp/review",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 1},
+    )
+    assert review.status_code == 200
+    assert "review" in review.json()
+
+    # place must refuse without TRADING_LIVE
+    place = client.post(
+        "/api/trading/mcp/place",
+        json={"symbol": "AAPL", "side": "buy", "quantity": 1},
+    )
+    assert place.status_code == 400
+    assert "TRADING_LIVE" in place.json()["detail"]
+
+
+def test_dashboard_serves_robinhood_mcp_deeplink():
+    """Connect button + type=http deeplink config (url-only payloads fail to install)."""
+    import json
+    from pathlib import Path
+
+    html = client.get("/").text
+    assert "Connect Robinhood MCP" in html
+    assert "/static/dashboard.js?v=10" in html
+
+    js = Path("gary/static/dashboard.js").read_text(encoding="utf-8")
+    assert "type: 'http'" in js
+    assert "agent.robinhood.com/mcp/trading" in js
+    assert "cursor://anysphere.cursor-deeplink/mcp/install?name=robinhood-trading" in js
+
+    mcp_cfg = json.loads(Path(".cursor/mcp.json").read_text(encoding="utf-8"))
+    server = mcp_cfg["mcpServers"]["robinhood-trading"]
+    assert server["type"] == "http"
+    assert server["url"] == "https://agent.robinhood.com/mcp/trading"
