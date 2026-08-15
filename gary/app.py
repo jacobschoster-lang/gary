@@ -49,8 +49,8 @@ from gary.trading import (
     TradingBot,
     TradingStore,
     optimize,
+    step_robinhood,
 )
-from gary.trading.live import step_robinhood
 from gary.trading.robinhood_mcp import DEFAULT_MCP_URL, RobinhoodMcpError
 
 app = FastAPI(title="gary", version="0.1.0")

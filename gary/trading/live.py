@@ -141,6 +141,9 @@ class LiveRouter:
     def __getattr__(self, name: str) -> Any:
         return getattr(self.paper, name)
 
+    def _skip(self, symbol: str, side: str, reason: str) -> None:
+        self.skipped.append({"symbol": symbol, "side": side, "reason": reason})
+
     def _cap(self, notional: float) -> float:
         return max(0.0, min(notional, self.max_order, self.max_gross - self.gross_sent))
 
@@ -159,11 +162,11 @@ class LiveRouter:
     def buy(self, symbol: str, notional: float, price: float, *, on: str = "",
             strategy: str = "", reason: str = "") -> Fill | None:
         if price_data.is_crypto(symbol):
-            self.skipped.append({"symbol": symbol, "side": "buy", "reason": "crypto skipped (equity MCP)"})
+            self._skip(symbol, "buy", "crypto skipped (equity MCP)")
             return None
         capped = self._cap(notional)
         if capped < 1.0:
-            self.skipped.append({"symbol": symbol, "side": "buy", "reason": "below live notional cap"})
+            self._skip(symbol, "buy", "below live notional cap")
             return None
         result = self._route(symbol, "buy", dollar_amount=round(capped, 2))
         self.gross_sent += capped
@@ -177,7 +180,7 @@ class LiveRouter:
     def sell(self, symbol: str, quantity: float, price: float, *, on: str = "",
              strategy: str = "", reason: str = "") -> Fill | None:
         if price_data.is_crypto(symbol):
-            self.skipped.append({"symbol": symbol, "side": "sell", "reason": "crypto skipped (equity MCP)"})
+            self._skip(symbol, "sell", "crypto skipped (equity MCP)")
             return None
         if quantity <= 0 or price <= 0:
             return None
@@ -194,12 +197,12 @@ class LiveRouter:
 
     def short(self, symbol: str, notional: float, price: float, *, on: str = "",
               strategy: str = "", reason: str = "") -> Fill | None:
-        self.skipped.append({"symbol": symbol, "side": "short", "reason": "shorts disabled on live"})
+        self._skip(symbol, "short", "shorts disabled on live")
         return None
 
     def cover(self, symbol: str, quantity: float, price: float, *, on: str = "",
               strategy: str = "", reason: str = "") -> Fill | None:
-        self.skipped.append({"symbol": symbol, "side": "cover", "reason": "shorts disabled on live"})
+        self._skip(symbol, "cover", "shorts disabled on live")
         return None
 
 
