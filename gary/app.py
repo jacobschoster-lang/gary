@@ -51,6 +51,7 @@ from gary.trading import (
     optimize,
     step_robinhood,
 )
+from gary.trading.live import max_order_usd
 from gary.trading.robinhood_mcp import DEFAULT_MCP_URL, RobinhoodMcpError
 
 app = FastAPI(title="gary", version="0.1.0")
@@ -572,7 +573,7 @@ def trading_mcp_place(req: McpOrderIn) -> dict[str, Any]:
 
 class LiveStepIn(BaseModel):
     dry_run: bool = True
-    max_order_usd: float | None = Field(default=None, gt=0, le=10_000)
+    max_order_usd: float | None = Field(default=None, gt=0)
 
 
 @app.post("/api/trading/live/step")
@@ -580,12 +581,20 @@ def trading_live_step(req: LiveStepIn) -> dict[str, Any]:
     """One model step on the agentic account. Default is review-only (dry_run).
 
     ``simulate`` / paper Run never hit this path. Execute requires TRADING_LIVE=1.
+    Client ``max_order_usd`` can only tighten the env cap, not raise it.
     """
     mcp = _require_mcp()
     config, _ = trading_store.load()
+    cap = max_order_usd()
+    requested = req.max_order_usd
+    if requested is not None and requested > cap:
+        raise HTTPException(
+            status_code=400,
+            detail=f"max_order_usd {requested} exceeds cap {cap}",
+        )
     try:
         return step_robinhood(
-            mcp, config, dry_run=req.dry_run, max_order=req.max_order_usd,
+            mcp, config, dry_run=req.dry_run, max_order=requested,
         )
     except RobinhoodMcpError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

@@ -564,6 +564,26 @@ def test_robinhood_mcp_review_before_place_and_reads():
     assert calls[0][0] == "get_accounts"
 
 
+def test_robinhood_mcp_refuses_non_agentic_account():
+    from gary.trading.robinhood_mcp import RobinhoodMcpBroker, RobinhoodMcpError
+
+    def caller(tool, args):
+        if tool == "get_accounts":
+            return {"data": {"accounts": [{
+                "account_number": "RETAIL-1",
+                "agentic_allowed": False,
+            }]}}
+        return {"data": {}}
+
+    broker = RobinhoodMcpBroker(token="tok", caller=caller)
+    try:
+        broker.resolve_account()
+    except RobinhoodMcpError as exc:
+        assert "agentic" in str(exc).lower()
+    else:
+        raise AssertionError("expected refuse when no agentic_allowed account")
+
+
 def test_robinhood_mcp_refuses_orders_when_not_live():
     from gary.trading import RobinhoodMcpBroker
     from gary.trading.robinhood_mcp import RobinhoodMcpError
@@ -750,6 +770,7 @@ def test_live_config_drops_crypto_and_disables_shorts():
 
 def test_paper_from_mcp_snapshot():
     from gary.trading.live import paper_from_snapshot
+    from gary.trading.robinhood_mcp import RobinhoodMcpError
 
     paper = paper_from_snapshot(
         {"buying_power": 3210.5},
@@ -757,12 +778,21 @@ def test_paper_from_mcp_snapshot():
             {"symbol": "AAPL", "quantity": 2, "average_price": 180.0},
             {"symbol": "BTC", "quantity": 0.1, "average_price": 60_000.0},
         ]},
-        BotConfig(),
     )
     assert paper.cash == 3210.5
     assert paper.positions["AAPL"].quantity == 2
     assert paper.positions["AAPL"].avg_cost == 180.0
     assert "BTC" not in paper.positions
+
+    empty = paper_from_snapshot({"buying_power": 0}, {"positions": []})
+    assert empty.cash == 0.0
+
+    try:
+        paper_from_snapshot({"total_value": 50_000.0}, {"positions": []})
+    except RobinhoodMcpError as exc:
+        assert "buying_power" in str(exc)
+    else:
+        raise AssertionError("total_value must not be treated as cash")
 
 
 def test_live_router_caps_reviews_and_skips_crypto():
@@ -832,6 +862,9 @@ def test_step_robinhood_dry_run_reviews_without_placing():
     assert "place_equity_order" not in tools
     assert "BTC" not in result["universe"]
 
+    clamped = step_robinhood(mcp, cfg, dry_run=True, max_order=10_000)
+    assert clamped["caps"]["max_order_usd"] == 250.0
+
     try:
         step_robinhood(mcp, cfg, dry_run=False)
     except RobinhoodMcpError as exc:
@@ -872,4 +905,11 @@ def test_api_trading_live_step_dry_run_and_execute_gate(tmp_path, monkeypatch):
     execute = client.post("/api/trading/live/step", json={"dry_run": False})
     assert execute.status_code == 400
     assert "TRADING_LIVE" in execute.json()["detail"]
+
+    too_big = client.post(
+        "/api/trading/live/step",
+        json={"dry_run": True, "max_order_usd": 10_000},
+    )
+    assert too_big.status_code == 400
+    assert "exceeds cap" in too_big.json()["detail"]
 

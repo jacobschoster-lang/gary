@@ -68,13 +68,24 @@ def _num(data: dict, *keys: str, default: float = 0.0) -> float:
     return default
 
 
-def buying_power_from_portfolio(raw: Any) -> float:
+_BUYING_POWER_KEYS = (
+    "buying_power", "buyingPower", "cash", "available_cash",
+    "availableCash", "cash_available",
+)
+
+
+def buying_power_from_portfolio(raw: Any) -> float | None:
+    """Spendable cash only. ``total_value`` is portfolio worth, not buying power."""
     if not isinstance(raw, dict):
-        return 0.0
-    return _num(
-        raw, "buying_power", "buyingPower", "cash", "available_cash",
-        "availableCash", "cash_available", "total_value", "totalValue",
-    )
+        return None
+    for key in _BUYING_POWER_KEYS:
+        if key not in raw or raw[key] is None:
+            continue
+        try:
+            return max(0.0, float(raw[key]))
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def positions_from_mcp(raw: Any) -> dict[str, Position]:
@@ -104,12 +115,13 @@ def positions_from_mcp(raw: Any) -> dict[str, Position]:
 def paper_from_snapshot(
     portfolio: Any,
     positions_raw: Any,
-    config: BotConfig,
 ) -> PaperBroker:
-    cash = max(0.0, buying_power_from_portfolio(portfolio))
-    paper = PaperBroker(cash=cash or config.starting_cash, fee_bps=0.0, slippage_bps=0.0)
-    if cash:
-        paper.cash = cash
+    cash = buying_power_from_portfolio(portfolio)
+    if cash is None:
+        raise RobinhoodMcpError(
+            "portfolio missing buying_power/cash; refusing live step"
+        )
+    paper = PaperBroker(cash=cash, fee_bps=0.0, slippage_bps=0.0)
     for symbol, pos in positions_from_mcp(positions_raw).items():
         if price_data.is_crypto(symbol) or pos.quantity <= 0:
             continue
@@ -219,13 +231,19 @@ def step_robinhood(
     if not dry_run and not mcp.live_enabled:
         raise RobinhoodMcpError("live trading disabled; set TRADING_LIVE=1 to enable")
     cfg = live_config(config or BotConfig())
+    order_cap = max_order_usd()
+    gross_cap = max_gross_usd()
+    if max_order is not None:
+        order_cap = min(max_order, order_cap)
+    if max_gross is not None:
+        gross_cap = min(max_gross, gross_cap)
     portfolio = mcp.get_portfolio()
     held = mcp.get_equity_positions()
-    paper = paper_from_snapshot(portfolio, held, cfg)
+    paper = paper_from_snapshot(portfolio, held)
     router = LiveRouter(
         paper, mcp, dry_run=dry_run,
-        max_order=max_order if max_order is not None else max_order_usd(),
-        max_gross=max_gross if max_gross is not None else max_gross_usd(),
+        max_order=order_cap,
+        max_gross=gross_cap,
     )
     bot = TradingBot(config=cfg, broker=router, use_live=use_live_prices)
     result = bot.step_live()

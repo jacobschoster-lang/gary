@@ -129,7 +129,8 @@ Trading bot (paper):
  `get_equity_orders`, `review_equity_order`, `place_equity_order`,
  `cancel_equity_order`). Orders always run `review_equity_order` first unless
  skipped. Gated on `ROBINHOOD_MCP_TOKEN` + `TRADING_LIVE=1`; optional
- `ROBINHOOD_MCP_ACCOUNT` (auto-picked from agentic accounts otherwise). Injectable
+ `ROBINHOOD_MCP_ACCOUNT` (auto-picked from **agentic** accounts only; refuses
+ if none are `agentic_allowed`). Injectable
  `caller(tool, args)` (tests use a fake). `.cursor/mcp.json` registers the server
  at the official URL with `"type": "http"` (required for Cursor install cards).
  In Cursor: Settings → Tools & MCPs → **Connect** (desktop IDE OAuth; cloud

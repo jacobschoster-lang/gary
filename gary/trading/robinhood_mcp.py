@@ -161,13 +161,18 @@ class RobinhoodMcpBroker:
             accounts = raw.get("accounts") or raw.get("results") or []
         elif isinstance(raw, list):
             accounts = raw
+        if not accounts:
+            raise RobinhoodMcpError("no Robinhood accounts returned by get_accounts")
         agentic = [
             a for a in accounts
             if isinstance(a, dict) and a.get("agentic_allowed")
         ]
-        pick = (agentic or accounts or [None])[0]
-        if not isinstance(pick, dict):
-            raise RobinhoodMcpError("no Robinhood accounts returned by get_accounts")
+        if not agentic:
+            raise RobinhoodMcpError(
+                "no agentic-allowed Robinhood account; set ROBINHOOD_MCP_ACCOUNT "
+                "or enable Agentic trading on an account"
+            )
+        pick = agentic[0]
         number = (
             pick.get("account_number")
             or pick.get("accountNumber")
