@@ -1,11 +1,13 @@
 """Paper trading bot: strategies + risk rules on a simulated brokerage account.
 
 Runs fully offline/deterministically (:class:`PaperBroker` + synthetic price
-fallback). Going live is an env-gated seam (:mod:`gary.trading.robinhood`).
+fallback). Going live is an env-gated seam (:mod:`gary.trading.robinhood_mcp`
+for equities via Robinhood MCP, :mod:`gary.trading.robinhood` for crypto).
 """
 
 from gary.trading.broker import Broker, PaperBroker
 from gary.trading.engine import TradingBot
+from gary.trading.live import step_robinhood
 from gary.trading.models import BotConfig, Fill, Position, Signal
 from gary.trading.optimize import candidate_configs, optimize
 from gary.trading.robinhood import RobinhoodCryptoBroker, RobinhoodError
@@ -25,6 +27,7 @@ __all__ = [
     "RobinhoodError",
     "RobinhoodMcpBroker",
     "RobinhoodMcpError",
+    "step_robinhood",
     "optimize",
     "candidate_configs",
 ]

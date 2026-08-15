@@ -407,11 +407,22 @@ class TradingBot:
         }
 
     def status(self) -> dict[str, Any]:
-        prices = price_data.latest_prices(self.config.universe, use_live=self.use_live)
-        # Include any held symbols outside the configured universe, too.
-        for sym in self.broker.positions:
-            prices.setdefault(sym, price_data.price_series(sym, 60, use_live=self.use_live)[-1])
-        return self.report(curve=[], prices=prices, days=0)
+        prices, sources = price_data.mark_prices(
+            self.config.universe, self.broker.positions, use_live=self.use_live
+        )
+        report = self.report(curve=[], prices=prices, days=0)
+        report["mark_sources"] = sources
+        mixed = [
+            s for s in self.broker.positions
+            if sources.get(s) == "synthetic"
+        ]
+        if mixed:
+            report["mark_note"] = (
+                "Open positions are marked in the same price family they were "
+                f"filled in (synthetic for {', '.join(mixed)}). Live quotes are "
+                "not mixed in, so unrealized P&L is not inflated."
+            )
+        return report
 
     def step_live(self) -> dict[str, Any]:
         """Advance the *persisted* account one step using the latest prices.
@@ -419,10 +430,19 @@ class TradingBot:
         Unlike ``simulate`` (a from-scratch backtest), this mutates the current
         broker — it's the forward paper-trading path a scheduled job calls daily.
         Decisions use the latest available closes and fill at the latest price.
+        Held names stay in the price family they were filled in so a synthetic
+        book is not marked to live quotes (which would invent take-profit exits).
         """
         cfg = self.config
         n = self.warmup() + 2
-        series = {s: price_data.price_series(s, n, use_live=self.use_live) for s in cfg.universe}
+        _, sources = price_data.mark_prices(
+            cfg.universe, self.broker.positions, use_live=self.use_live
+        )
+        held_synthetic = any(
+            sources.get(s) == "synthetic" for s in self.broker.positions
+        )
+        step_live = self.use_live and not held_synthetic
+        series = {s: price_data.price_series(s, n, use_live=step_live) for s in cfg.universe}
         prices = {s: v[-1] for s, v in series.items() if v}
         on = date.today().isoformat()
         self._ticks = 0  # force a rebalance decision on each live step
